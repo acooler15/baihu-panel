@@ -219,13 +219,7 @@ func (tc *TaskController) CreateTask(c *gin.Context) {
 }
 
 // BulkSaveTask 批量保存/导入任务配置（用于主节点下发同步）
-// @Summary 批量保存任务
-// @Description 批量导入任务配置，如果ID或同名存在则更新，不存在则创建
-// @Tags 任务管理
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Router /tasks/bulk_save [post]
+// 已迁移至 Huma：TABulkSaveTask /api/v1/tasks/bulk_save
 func (tc *TaskController) BulkSaveTask(c *gin.Context) {
 	var reqs []vo.TaskVO
 
@@ -626,19 +620,7 @@ func (tc *TaskController) BatchDeleteTasks(c *gin.Context) {
 }
 
 // BatchDeleteByQuery 根据查询条件批量删除任务
-// @Summary 根据查询条件批量删除任务
-// @Description 根据查询条件批量删除匹配的所有任务
-// @Tags 任务管理
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param name query string false "任务名称关键词"
-// @Param tags query string false "标签关键词"
-// @Param type query string false "任务类型"
-// @Param agent_id query string false "执行位置(节点ID)"
-// @Success 200 {object} utils.Response{data=map[string]int}
-// @Failure 401 {object} utils.Response "未授权"
-// @Router /tasks/batch-by-query [delete]
+// 已迁移至 Huma：TABatchDeleteByQuery /api/v1/tasks/batch-by-query
 func (tc *TaskController) BatchDeleteByQuery(c *gin.Context) {
 	name := c.Query("name")
 	agentIDStr := c.Query("agent_id")

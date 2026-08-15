@@ -82,10 +82,13 @@ func Setup(c *Controllers) *gin.Engine {
 	initPublicAPIRoutes(apiV1, c)     // 公开接口 (无需认证)
 	initAuthorizedAPIRoutes(apiV1, c) // 授权接口 (需 JWT)
 
-	// 3.1 Huma 实例（双文档方案）：挂载于 /api/v1，暂不注册任何接口
+	// 3.1 Huma 实例（双文档方案）：挂载于 /api/v1
+	// 阶段 2 迁移的管理接口均为管理员权限接口，统一套用 AuthRequired + AdminRequired 鉴权。
+	// 公开接口（/auth/login 等）与特殊接口（WS/SSE/文件流）继续由 Gin 原生处理。
 	// API 版本号与编译产物版本号保持一致（由 Makefile LDFLAGS 注入，默认 "dev"）
 	c.APIV1Huma = newHuma(router, "/api/v1", "Baihu Panel API", constant.Version,
-		"内部管理 API。需通过登录后的 Cookie 会话进行鉴权。")
+		"内部管理 API。需通过登录后的 Cookie 会话进行鉴权。",
+		middleware.AuthRequired(), middleware.AdminRequired())
 
 	// 4.1 Huma 实例（双文档方案）：挂载于 /open2api/v1，注册的 Huma 路由统一走 OpenapiRequired 鉴权
 	// 注意：必须在 initOpenAPIV1Routes 之前创建，否则注册时实例仍为 nil
@@ -95,6 +98,8 @@ func Setup(c *Controllers) *gin.Engine {
 	// 4. [ location /api/agent ] Agent 相关 API 路由组
 	initAgentAPIRoutes(root, c)
 	initOpenAPIV1Routes(c)
+	// /api/v1 管理接口的 Huma 声明式注册（阶段 2 分批迁移）
+	initAPIV1HumaRoutes(c)
 
 	// =========================================================================
 	// [ location / ] 全局 404 兜底与 SPA 渲染

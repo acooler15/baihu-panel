@@ -21,13 +21,7 @@ func NewEnvController(envService *services.EnvService) *EnvController {
 }
 
 // GetSecretStatus 获取加密秘钥状态
-// @Summary 获取加密秘钥状态
-// @Description 返回系统是否已配置加密秘钥
-// @Tags Env
-// @Produce json
-// @Success 200 {object} utils.Response{data=bool} "成功"
-// @Router /env/secret-status [get]
-// @Security BearerAuth
+// 已迁移至 Huma：TAGetSecretStatus /api/v1/env/secret-status
 func (ec *EnvController) GetSecretStatus(c *gin.Context) {
 	utils.Success(c, utils.IsSecretKeySet())
 }
@@ -214,14 +208,7 @@ func (ec *EnvController) GetAssociatedTasks(c *gin.Context) {
 }
 
 // GetTags 获取所有环境变量标签
-// @Summary 获取所有环境变量标签
-// @Description 获取所有环境变量中使用的标签列表
-// @Tags 环境变量
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Success 200 {object} utils.Response{data=[]string}
-// @Router /env/tags [get]
+// 已迁移至 Huma：TAGetEnvTags /api/v1/env/tags
 func (ec *EnvController) GetTags(c *gin.Context) {
 	tags, err := ec.envService.GetAllEnvTags()
 	if err != nil {
