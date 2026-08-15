@@ -87,13 +87,14 @@ func Setup(c *Controllers) *gin.Engine {
 	c.APIV1Huma = newHuma(router, "/api/v1", "Baihu Panel API", constant.Version,
 		"内部管理 API。需通过登录后的 Cookie 会话进行鉴权。")
 
+	// 4.1 Huma 实例（双文档方案）：挂载于 /open2api/v1，注册的 Huma 路由统一走 OpenapiRequired 鉴权
+	// 注意：必须在 initOpenAPIV1Routes 之前创建，否则注册时实例仍为 nil
+	c.Open2APIV1Huma = newHuma(router, "/open2api/v1", "Baihu Panel OpenAPI", constant.Version,
+		"对外开放 API。需通过 Bearer Token 进行鉴权。", middleware.OpenapiRequired())
+
 	// 4. [ location /api/agent ] Agent 相关 API 路由组
 	initAgentAPIRoutes(root, c)
-	initOpenAPIV1Routes(root, c)
-
-	// 4.1 Huma 实例（双文档方案）：挂载于 /open2api/v1，暂不注册任何接口
-	c.Open2APIV1Huma = newHuma(router, "/open2api/v1", "Baihu Panel OpenAPI", constant.Version,
-		"对外开放 API。需通过 Bearer Token 进行鉴权。")
+	initOpenAPIV1Routes(c)
 
 	// =========================================================================
 	// [ location / ] 全局 404 兜底与 SPA 渲染

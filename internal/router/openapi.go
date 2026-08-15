@@ -1,84 +1,23 @@
 package router
 
-import (
-	"github.com/engigu/baihu-panel/internal/middleware"
-	"github.com/gin-gonic/gin"
-)
-
-// initOpenAPIV1Routes 初始化 OpenAPI v1 路由
-// 只注册有 @Tags OpenAPI 注释的接口
-func initOpenAPIV1Routes(root *gin.RouterGroup, c *Controllers) {
-	// OpenAPI v1 路由组 (使用 Bearer Token)
-	open := root.Group("/open2api/v1")
-	open.Use(middleware.OpenapiRequired())
-	{
-		// 任务相关接口
-		registerOpenAPITaskRoutes(open, c)
-		// 环境变量相关接口
-		registerOpenAPIEnvRoutes(open, c)
-		// 脚本相关接口
-		registerOpenAPIScriptRoutes(open, c)
-		// 日志相关接口
-		registerOpenAPILogRoutes(open, c)
-		// 任务执行相关接口
-		registerOpenAPIExecutorRoutes(open, c)
+// initOpenAPIV1Routes 初始化 OpenAPI v1 路由（Huma 声明式注册）。
+//
+// 说明：OpenAPI v1 路由通过 Huma 实例 c.Open2APIV1Huma 注册，
+// 鉴权由 newHuma 中传入的 OpenapiRequired 中间件统一处理。
+func initOpenAPIV1Routes(c *Controllers) {
+	if c.Open2APIV1Huma == nil {
+		return
 	}
-}
 
-// registerOpenAPITaskRoutes 注册 OpenAPI 任务路由（只包含有 @Tags OpenAPI 注释的接口）
-func registerOpenAPITaskRoutes(g *gin.RouterGroup, c *Controllers) {
-	tasks := g.Group("/tasks")
-	{
-		tasks.POST("", c.Task.CreateTask)
-		tasks.GET("", c.Task.GetTasks)
-		tasks.GET("/:id", c.Task.GetTask)
-		tasks.PUT("/:id", c.Task.UpdateTask)
-		tasks.DELETE("/:id", c.Task.DeleteTask)
-		tasks.POST("/stop/:logID", c.Task.StopTask)
-		tasks.GET("/tags", c.Task.GetTags)
-	}
-}
-
-// registerOpenAPIEnvRoutes 注册 OpenAPI 环境变量路由（只包含有 @Tags OpenAPI 注释的接口）
-func registerOpenAPIEnvRoutes(g *gin.RouterGroup, c *Controllers) {
-	env := g.Group("/env")
-	{
-		env.POST("", c.Env.CreateEnvVar)
-		env.GET("", c.Env.GetEnvVars)
-		env.GET("/all", c.Env.GetAllEnvVars)
-		env.GET("/:id", c.Env.GetEnvVar)
-		env.GET("/:id/tasks", c.Env.GetAssociatedTasks)
-		env.PUT("/:id", c.Env.UpdateEnvVar)
-		env.DELETE("/:id", c.Env.DeleteEnvVar)
-	}
-}
-
-// registerOpenAPILogRoutes 注册 OpenAPI 日志路由（只包含有 @Tags OpenAPI 注释的接口）
-func registerOpenAPILogRoutes(g *gin.RouterGroup, c *Controllers) {
-	logs := g.Group("/logs")
-	{
-		logs.GET("", c.Log.GetLogs)
-		logs.GET("/:id", c.Log.GetLogDetail)
-	}
-}
-
-// registerOpenAPIExecutorRoutes 注册 OpenAPI 任务执行路由（只包含有 @Tags OpenAPI 注释的接口）
-func registerOpenAPIExecutorRoutes(g *gin.RouterGroup, c *Controllers) {
-	execution := g.Group("/execute")
-	{
-		execution.POST("/task/:id", c.Executor.ExecuteTask)
-		execution.GET("/results", c.Executor.GetLastResults)
-	}
-}
-
-// registerOpenAPIScriptRoutes 注册 OpenAPI 脚本路由
-func registerOpenAPIScriptRoutes(g *gin.RouterGroup, c *Controllers) {
-	scripts := g.Group("/scripts")
-	{
-		scripts.POST("", c.Script.CreateScript)
-		scripts.GET("", c.Script.GetScripts)
-		scripts.GET("/:id", c.Script.GetScript)
-		scripts.PUT("/:id", c.Script.UpdateScript)
-		scripts.DELETE("/:id", c.Script.DeleteScript)
-	}
+	api := c.Open2APIV1Huma
+	// 任务相关接口
+	c.Task.RegisterOpenAPITaskRoutes(api)
+	// 环境变量相关接口
+	c.Env.RegisterOpenAPIEnvRoutes(api)
+	// 脚本相关接口
+	c.Script.RegisterOpenAPIScriptRoutes(api)
+	// 日志相关接口
+	c.Log.RegisterOpenAPILogRoutes(api)
+	// 任务执行相关接口
+	c.Executor.RegisterOpenAPIExecutorRoutes(api)
 }

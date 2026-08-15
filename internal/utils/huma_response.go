@@ -13,6 +13,15 @@ type HumaResponse[T any] struct {
 	Data T      `json:"data,omitempty"`
 }
 
+// HumaPagination Huma 分页数据（泛型），用于 Huma handler 的响应。
+// 对应原 utils.PaginationData 的结构，泛型化以便 Huma 生成精确的 data schema。
+type HumaPagination[T any] struct {
+	Data     T     `json:"data"`
+	Total    int64 `json:"total"`
+	Page     int   `json:"page"`
+	PageSize int   `json:"page_size"`
+}
+
 // HumaError 业务错误，实现 error 接口
 type HumaError struct {
 	Status int

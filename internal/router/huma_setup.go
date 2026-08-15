@@ -16,7 +16,10 @@ import (
 // 无法直接挂载到 gin.RouterGroup。为支持在 /api/v1 与 /open2api/v1 下各挂载
 // 一个独立的 Huma 实例（双文档方案），这里通过自定义 adapter 在注册 Operation
 // 时统一为路径追加前缀，从而实现按前缀隔离。
-func newHuma(engine *gin.Engine, prefix, title, version, desc string) huma.API {
+//
+// middleware 中传入的 gin.HandlerFunc 会应用到该前缀下注册的所有 Huma 路由
+// （例如 OpenapiRequired 鉴权中间件）。
+func newHuma(engine *gin.Engine, prefix, title, version, desc string, middleware ...gin.HandlerFunc) huma.API {
 	config := huma.DefaultConfig(title, version)
 	config.Info.Description = desc
 	// 安全方案
@@ -39,16 +42,18 @@ func newHuma(engine *gin.Engine, prefix, title, version, desc string) huma.API {
 	config.Transformers = append(config.Transformers, utils.HumaTransformer)
 
 	return huma.NewAPI(config, &prefixAdapter{
-		engine: engine,
-		prefix: strings.TrimSuffix(prefix, "/"),
+		engine:     engine,
+		prefix:     strings.TrimSuffix(prefix, "/"),
+		middleware: middleware,
 	})
 }
 
 // prefixAdapter 实现 huma.Adapter，在注册路由时自动为路径追加前缀，
 // 使同一个 gin.Engine 下可以挂载多个独立的 Huma 实例。
 type prefixAdapter struct {
-	engine *gin.Engine
-	prefix string
+	engine     *gin.Engine
+	prefix     string
+	middleware []gin.HandlerFunc
 }
 
 func (a *prefixAdapter) Handle(op *huma.Operation, handler func(huma.Context)) {
@@ -57,9 +62,31 @@ func (a *prefixAdapter) Handle(op *huma.Operation, handler func(huma.Context)) {
 	path = strings.ReplaceAll(path, "{", ":")
 	path = strings.ReplaceAll(path, "}", "")
 
-	a.engine.Handle(op.Method, path, func(c *gin.Context) {
+	// Huma 自动注册的 OpenAPI 规范 / 文档 / schema 路由不应套用业务鉴权中间件，
+	// 否则文档无法被公开访问。通过路径特征识别并跳过中间件。
+	handlers := a.middleware
+	if isHumaMetaPath(op.Path) {
+		handlers = nil
+	}
+
+	a.engine.Handle(op.Method, path, append(handlers, func(c *gin.Context) {
+		// 将 *gin.Context 注入到请求 context，供 Huma handler 读取中间件写入的值
+		utils.InjectGinContext(c)
 		handler(humagin.NewContext(op, c))
-	})
+	})...)
+}
+
+// isHumaMetaPath 判断是否为 Huma 自动注册的元信息路由（OpenAPI 规范、文档、schema）。
+// 这些路由由 huma.NewAPI 通过 adapter.Handle 注册，路径形如 /openapi.json、
+// /docs、/schemas/{schema} 等，不应被业务鉴权中间件拦截。
+func isHumaMetaPath(opPath string) bool {
+	base := opPath
+	if idx := strings.Index(base, "?"); idx >= 0 {
+		base = base[:idx]
+	}
+	return strings.HasPrefix(base, "/openapi") ||
+		strings.HasPrefix(base, "/docs") ||
+		strings.HasPrefix(base, "/schemas")
 }
 
 func (a *prefixAdapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {

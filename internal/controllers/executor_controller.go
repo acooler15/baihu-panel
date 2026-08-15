@@ -19,17 +19,6 @@ func NewExecutorController(executorService *tasks.ExecutorService) *ExecutorCont
 }
 
 // ExecuteTask 运行任务
-// @Summary 运行任务
-// @Description 立即执行指定的任务
-// @Tags 任务执行
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param id path string true "任务ID"
-// @Param body body object false "执行参数 (envs: 环境变量字典)"
-// @Success 200 {object} utils.Response{data=vo.ExecutionResultVO}
-// @Failure 400 {object} utils.Response
-// @Router /execute/task/{id} [post]
 func (ec *ExecutorController) ExecuteTask(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -70,15 +59,6 @@ func (ec *ExecutorController) ExecuteCommand(c *gin.Context) {
 }
 
 // GetLastResults 获取最新执行结果
-// @Summary 获取最新执行结果
-// @Description 获取最新任务或命令执行的结果列表
-// @Tags 任务执行
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param count query int false "数量 (默认 10)"
-// @Success 200 {object} utils.Response{data=[]vo.ExecutionResultVO}
-// @Router /execute/results [get]
 func (ec *ExecutorController) GetLastResults(c *gin.Context) {
 	count := 10
 	if c.Query("count") != "" {

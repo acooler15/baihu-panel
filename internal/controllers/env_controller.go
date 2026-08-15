@@ -33,15 +33,6 @@ func (ec *EnvController) GetSecretStatus(c *gin.Context) {
 }
 
 // CreateEnvVar 创建环境变量
-// @Summary 创建环境变量
-// @Description 创建一个新的环境变量
-// @Tags 环境变量
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param body body object true "环境变量信息"
-// @Success 200 {object} utils.Response{data=vo.EnvVO}
-// @Router /env [post]
 func (ec *EnvController) CreateEnvVar(c *gin.Context) {
 	userID := c.GetString("userID")
 
@@ -87,19 +78,6 @@ func (ec *EnvController) CreateEnvVar(c *gin.Context) {
 }
 
 // GetEnvVars 获取环境变量列表
-// @Summary 获取环境变量列表
-// @Description 分页获取环境变量列表，支持按名称筛选
-// @Tags 环境变量
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param name query string false "按名称模糊查询"
-// @Param page query int false "页码"
-// @Param page_size query int false "每页数量"
-// @Param type query string false "按类型筛选"
-// @Param tags query string false "按标签筛选"
-// @Success 200 {object} utils.Response{data=utils.PaginationData{data=[]vo.EnvVO}}
-// @Router /env [get]
 func (ec *EnvController) GetEnvVars(c *gin.Context) {
 	userID := c.GetString("userID")
 	p := utils.ParsePagination(c)
@@ -111,14 +89,6 @@ func (ec *EnvController) GetEnvVars(c *gin.Context) {
 }
 
 // GetAllEnvVars 获取所有环境变量
-// @Summary 获取所有环境变量
-// @Description 获取当前用户的所有环境变量（不分页）
-// @Tags 环境变量
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Success 200 {object} utils.Response{data=[]vo.EnvVO}
-// @Router /env/all [get]
 func (ec *EnvController) GetAllEnvVars(c *gin.Context) {
 	userID := c.GetString("userID")
 	envVars := ec.envService.GetEnvVarsByUserID(userID)
@@ -126,16 +96,6 @@ func (ec *EnvController) GetAllEnvVars(c *gin.Context) {
 }
 
 // GetEnvVar 获取环境变量详情
-// @Summary 获取环境变量详情
-// @Description 根据 ID 获取环境变量详情
-// @Tags 环境变量
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param id path string true "环境变量ID"
-// @Success 200 {object} utils.Response{data=vo.EnvVO}
-// @Failure 404 {object} utils.Response
-// @Router /env/{id} [get]
 func (ec *EnvController) GetEnvVar(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -153,17 +113,6 @@ func (ec *EnvController) GetEnvVar(c *gin.Context) {
 }
 
 // UpdateEnvVar 更新环境变量
-// @Summary 更新环境变量
-// @Description 根据 ID 更新环境变量信息
-// @Tags 环境变量
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param id path string true "环境变量ID"
-// @Param body body object true "环境变量更新信息"
-// @Success 200 {object} utils.Response{data=vo.EnvVO}
-// @Failure 404 {object} utils.Response
-// @Router /env/{id} [put]
 func (ec *EnvController) UpdateEnvVar(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -223,18 +172,6 @@ func (ec *EnvController) UpdateEnvVar(c *gin.Context) {
 }
 
 // DeleteEnvVar 删除环境变量
-// @Summary 删除环境变量
-// @Description 根据 ID 删除环境变量
-// @Tags 环境变量
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param id path string true "环境变量ID"
-// @Param force query boolean false "强制删除（忽略任务关联）"
-// @Success 200 {object} utils.Response
-// @Failure 404 {object} utils.Response
-// @Failure 409 {object} utils.Response{data=[]vo.TaskVO}
-// @Router /env/{id} [delete]
 func (ec *EnvController) DeleteEnvVar(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -266,15 +203,6 @@ func (ec *EnvController) DeleteEnvVar(c *gin.Context) {
 }
 
 // GetAssociatedTasks 获取关联任务
-// @Summary 获取关联任务
-// @Description 获取引用了该环境变量的任务列表
-// @Tags 环境变量
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param id path string true "环境变量ID"
-// @Success 200 {object} utils.Response{data=[]vo.TaskVO}
-// @Router /env/{id}/tasks [get]
 func (ec *EnvController) GetAssociatedTasks(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {

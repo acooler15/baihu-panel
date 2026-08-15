@@ -1,5 +1,6 @@
 # Binaries
 baihu
+baihu-panel
 *.exe
 *.dll
 *.so

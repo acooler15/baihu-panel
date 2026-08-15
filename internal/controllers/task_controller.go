@@ -101,16 +101,6 @@ func getRepoPhysicalPath(targetPath, dirName, sourceURL, branch string) string {
 	return absPath
 }
 // CreateTask 创建任务
-// @Summary 创建任务
-// @Description 创建一个新的任务
-// @Tags 任务管理
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param body body vo.TaskCreateReq true "任务创建信息"
-// @Success 200 {object} utils.Response{data=vo.TaskVO}
-// @Failure 400 {object} utils.Response
-// @Router /tasks [post]
 func (tc *TaskController) CreateTask(c *gin.Context) {
 	var req vo.TaskCreateReq
 
@@ -310,20 +300,6 @@ func (tc *TaskController) BulkSaveTask(c *gin.Context) {
 }
 
 // GetTasks 获取任务列表
-// @Summary 获取任务列表
-// @Description 分页获取任务列表，支持按名称、Agent ID、标签、类型筛选
-// @Tags 任务管理
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param name query string false "任务名称"
-// @Param agent_id query string false "Agent ID"
-// @Param tags query string false "标签"
-// @Param type query string false "任务类型"
-// @Param page query int false "页码"
-// @Param page_size query int false "每页数量"
-// @Success 200 {object} utils.Response{data=utils.PaginationData{data=[]vo.TaskVO}}
-// @Router /tasks [get]
 func (tc *TaskController) GetTasks(c *gin.Context) {
 	p := utils.ParsePagination(c)
 	name := c.DefaultQuery("name", "")
@@ -345,16 +321,6 @@ func (tc *TaskController) GetTasks(c *gin.Context) {
 }
 
 // GetTask 获取任务详情
-// @Summary 获取任务详情
-// @Description 根据 ID 获取任务详情
-// @Tags 任务管理
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param id path string true "任务ID"
-// @Success 200 {object} utils.Response{data=vo.TaskVO}
-// @Failure 404 {object} utils.Response
-// @Router /tasks/{id} [get]
 func (tc *TaskController) GetTask(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -372,17 +338,6 @@ func (tc *TaskController) GetTask(c *gin.Context) {
 }
 
 // UpdateTask 更新任务
-// @Summary 更新任务
-// @Description 根据 ID 更新任务信息
-// @Tags 任务管理
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param id path string true "任务ID"
-// @Param body body vo.TaskUpdateReq true "任务更新信息"
-// @Success 200 {object} utils.Response{data=vo.TaskVO}
-// @Failure 404 {object} utils.Response
-// @Router /tasks/{id} [put]
 func (tc *TaskController) UpdateTask(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -534,16 +489,6 @@ func (tc *TaskController) UpdateTask(c *gin.Context) {
 }
 
 // DeleteTask 删除任务
-// @Summary 删除任务
-// @Description 根据 ID 删除任务
-// @Tags 任务管理
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param id path string true "任务ID"
-// @Success 200 {object} utils.Response
-// @Failure 404 {object} utils.Response
-// @Router /tasks/{id} [delete]
 func (tc *TaskController) DeleteTask(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -735,16 +680,6 @@ func (tc *TaskController) BatchDeleteByQuery(c *gin.Context) {
 }
 
 // StopTask 停止任务
-// @Summary 停止任务
-// @Description 根据运行日志 ID 停止正在执行的任务
-// @Tags 任务管理
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param logID path string true "运行日志ID"
-// @Success 200 {object} utils.Response
-// @Failure 400 {object} utils.Response
-// @Router /tasks/stop/{logID} [post]
 func (tc *TaskController) StopTask(c *gin.Context) {
 	logID := c.Param("logID")
 	if logID == "" {
@@ -762,13 +697,6 @@ func (tc *TaskController) StopTask(c *gin.Context) {
 }
 
 // GetTags 获取所有任务标签
-// @Summary 获取所有任务标签
-// @Description 获取系统中所有任务已使用的唯一标签列表
-// @Tags 任务管理
-// @Produce json
-// @Security BearerAuth
-// @Success 200 {object} utils.Response{data=[]string}
-// @Router /tasks/tags [get]
 func (tc *TaskController) GetTags(c *gin.Context) {
 	tags, err := tc.taskService.GetAllTags()
 	if err != nil {

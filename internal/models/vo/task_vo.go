@@ -8,51 +8,51 @@ import (
 
 // TaskCreateReq 任务创建请求
 type TaskCreateReq struct {
-	Name          string               `json:"name" binding:"required" example:"测试任务"`
-	Remark        string               `json:"remark" example:"备注信息"`
-	Command       string               `json:"command" example:"echo 'Hello World'"`
-	PreCommand    string               `json:"pre_command" example:"echo 'pre'"`
-	PostCommand   string               `json:"post_command" example:"echo 'post'"`
-	Tags          string               `json:"tags" example:"test,dev"`
-	Type          string               `json:"type" example:"repo"` // 可以是 common, repo 等
-	Config        string               `json:"config" swaggertype:"string" example:"{\"source_url\":\"https://github.com/abc/repo\",\"branch\":\"main\"}"`
-	Schedule      string               `json:"schedule" example:"0 0 * * *"`
-	Timeout       int                  `json:"timeout" example:"3600"`
-	WorkDir       string               `json:"work_dir" example:"/tmp"`
-	CleanConfig   string               `json:"clean_config" example:"true"`
-	Envs          string               `json:"envs" example:"{\"ENV_VAR\":\"value\"}"`
-	Languages     models.TaskLanguages `json:"languages"`
-	AgentID       *string              `json:"agent_id" example:"agent-1"`
-	TriggerType   string               `json:"trigger_type" example:"cron"`
-	RetryCount    int                  `json:"retry_count" example:"3"`
-	RetryInterval int                  `json:"retry_interval" example:"60"`
-	RandomRange   int                  `json:"random_range" example:"10"`
-	PinType       string               `json:"pin_type" example:"time"`
+	Name          string               `json:"name" binding:"required" example:"测试任务" description:"任务名称"`
+	Remark        string               `json:"remark" example:"备注信息" description:"备注信息"`
+	Command       string               `json:"command" example:"echo 'Hello World'" description:"执行命令"`
+	PreCommand    string               `json:"pre_command" example:"echo 'pre'" description:"执行前命令"`
+	PostCommand   string               `json:"post_command" example:"echo 'post'" description:"执行后命令"`
+	Tags          string               `json:"tags" example:"test,dev" description:"标签"`
+	Type          string               `json:"type" example:"repo" description:"任务类型，common 或 repo"`
+	Config        string               `json:"config" swaggertype:"string" example:"{\"source_url\":\"https://github.com/abc/repo\",\"branch\":\"main\"}" description:"仓库任务配置"`
+	Schedule      string               `json:"schedule" example:"0 0 * * *" description:"cron 表达式"`
+	Timeout       int                  `json:"timeout" example:"3600" description:"超时时间(秒)"`
+	WorkDir       string               `json:"work_dir" example:"/tmp" description:"工作目录"`
+	CleanConfig   string               `json:"clean_config" example:"true" description:"清理配置"`
+	Envs          string               `json:"envs" example:"{\"ENV_VAR\":\"value\"}" description:"环境变量"`
+	Languages     models.TaskLanguages `json:"languages" description:"语言环境"`
+	AgentID       *string              `json:"agent_id" example:"agent-1" description:"执行节点ID"`
+	TriggerType   string               `json:"trigger_type" example:"cron" description:"触发方式"`
+	RetryCount    int                  `json:"retry_count" example:"3" description:"重试次数"`
+	RetryInterval int                  `json:"retry_interval" example:"60" description:"重试间隔(秒)"`
+	RandomRange   int                  `json:"random_range" example:"10" description:"随机范围"`
+	PinType       string               `json:"pin_type" example:"time" description:"固定类型"`
 }
 
 // TaskUpdateReq 任务更新请求
 type TaskUpdateReq struct {
-	Name          string               `json:"name" example:"测试任务"`
-	Remark        string               `json:"remark" example:"备注信息"`
-	Command       string               `json:"command" example:"echo 'Hello World'"`
-	PreCommand    string               `json:"pre_command" example:"echo 'pre'"`
-	PostCommand   string               `json:"post_command" example:"echo 'post'"`
-	Tags          string               `json:"tags" example:"test,dev"`
-	Type          string               `json:"type" example:"repo"`
-	Config        string               `json:"config" swaggertype:"string" example:"{\"source_url\":\"https://github.com/abc/repo\",\"branch\":\"main\"}"`
-	Schedule      string               `json:"schedule" example:"0 0 * * *"`
-	Timeout       int                  `json:"timeout" example:"3600"`
-	WorkDir       string               `json:"work_dir" example:"/tmp"`
-	CleanConfig   string               `json:"clean_config" example:"true"`
-	Envs          string               `json:"envs" example:"{\"ENV_VAR\":\"value\"}"`
-	Enabled       bool                 `json:"enabled" example:"true"`
-	Languages     models.TaskLanguages `json:"languages"`
-	AgentID       *string              `json:"agent_id" example:"agent-1"`
-	TriggerType   string               `json:"trigger_type" example:"cron"`
-	RetryCount    int                  `json:"retry_count" example:"3"`
-	RetryInterval int                  `json:"retry_interval" example:"60"`
-	RandomRange   int                  `json:"random_range" example:"10"`
-	PinType       string               `json:"pin_type" example:"time"`
+	Name          string               `json:"name" example:"测试任务" description:"任务名称"`
+	Remark        string               `json:"remark" example:"备注信息" description:"备注信息"`
+	Command       string               `json:"command" example:"echo 'Hello World'" description:"执行命令"`
+	PreCommand    string               `json:"pre_command" example:"echo 'pre'" description:"执行前命令"`
+	PostCommand   string               `json:"post_command" example:"echo 'post'" description:"执行后命令"`
+	Tags          string               `json:"tags" example:"test,dev" description:"标签"`
+	Type          string               `json:"type" example:"repo" description:"任务类型，common 或 repo"`
+	Config        string               `json:"config" swaggertype:"string" example:"{\"source_url\":\"https://github.com/abc/repo\",\"branch\":\"main\"}" description:"仓库任务配置"`
+	Schedule      string               `json:"schedule" example:"0 0 * * *" description:"cron 表达式"`
+	Timeout       int                  `json:"timeout" example:"3600" description:"超时时间(秒)"`
+	WorkDir       string               `json:"work_dir" example:"/tmp" description:"工作目录"`
+	CleanConfig   string               `json:"clean_config" example:"true" description:"清理配置"`
+	Envs          string               `json:"envs" example:"{\"ENV_VAR\":\"value\"}" description:"环境变量"`
+	Enabled       bool                 `json:"enabled" example:"true" description:"是否启用"`
+	Languages     models.TaskLanguages `json:"languages" description:"语言环境"`
+	AgentID       *string              `json:"agent_id" example:"agent-1" description:"执行节点ID"`
+	TriggerType   string               `json:"trigger_type" example:"cron" description:"触发方式"`
+	RetryCount    int                  `json:"retry_count" example:"3" description:"重试次数"`
+	RetryInterval int                  `json:"retry_interval" example:"60" description:"重试间隔(秒)"`
+	RandomRange   int                  `json:"random_range" example:"10" description:"随机范围"`
+	PinType       string               `json:"pin_type" example:"time" description:"固定类型"`
 }
 
 // TaskVO 任务视图对象
@@ -152,20 +152,20 @@ func ToTaskVOListFromModels(tasks []models.Task) []*TaskVO {
 
 // TaskLogVO 任务历史视图对象
 type TaskLogVO struct {
-	ID        string            `json:"id"`
-	TaskID    string            `json:"task_id"`
-	TaskName  string            `json:"task_name"`
-	TaskType  string            `json:"task_type"`
-	AgentID   *string           `json:"agent_id"`
-	Command   string            `json:"command"`
-	Error     string            `json:"error"`
-	Status    string            `json:"status"`
-	Duration  int64             `json:"duration"`
-	ExitCode  int               `json:"exit_code"`
-	StartTime *models.LocalTime `json:"start_time"`
-	EndTime   *models.LocalTime `json:"end_time"`
-	CreatedAt models.LocalTime  `json:"created_at"`
-	Output    string            `json:"output,omitempty"`
+	ID        string            `json:"id" description:"日志ID"`
+	TaskID    string            `json:"task_id" description:"任务ID"`
+	TaskName  string            `json:"task_name" description:"任务名称"`
+	TaskType  string            `json:"task_type" description:"任务类型"`
+	AgentID   *string           `json:"agent_id" description:"执行节点ID"`
+	Command   string            `json:"command" description:"执行命令"`
+	Error     string            `json:"error" description:"错误信息"`
+	Status    string            `json:"status" description:"执行状态"`
+	Duration  int64             `json:"duration" description:"执行耗时(毫秒)"`
+	ExitCode  int               `json:"exit_code" description:"退出码"`
+	StartTime *models.LocalTime `json:"start_time" description:"开始时间"`
+	EndTime   *models.LocalTime `json:"end_time" description:"结束时间"`
+	CreatedAt models.LocalTime  `json:"created_at" description:"创建时间"`
+	Output    string            `json:"output,omitempty" description:"执行输出"`
 }
 
 // ToTaskLogVO 将 TaskLog 模型转换为 TaskLogVO
@@ -212,18 +212,23 @@ func ToTaskLogVOListFromModels(logs []models.TaskLog) []*TaskLogVO {
 	return vos
 }
 
+// ExecuteTaskReq 执行任务请求
+type ExecuteTaskReq struct {
+	Envs map[string]string `json:"envs" description:"执行时注入的环境变量"`
+}
+
 // ExecutionResultVO 任务执行结果视图对象
 type ExecutionResultVO struct {
-	TaskID    string `json:"task_id"`
-	LogID     string `json:"log_id,omitempty"`
-	Success   bool   `json:"success"`
-	Status    string `json:"status"`
-	Output    string `json:"output,omitempty"`
-	Error     string `json:"error,omitempty"`
-	Duration  int64  `json:"duration,omitempty"`
-	ExitCode  int    `json:"exit_code,omitempty"`
-	StartTime string `json:"start_time,omitempty"`
-	EndTime   string `json:"end_time,omitempty"`
+	TaskID    string `json:"task_id" description:"任务ID"`
+	LogID     string `json:"log_id,omitempty" description:"日志ID"`
+	Success   bool   `json:"success" description:"是否成功"`
+	Status    string `json:"status" description:"执行状态"`
+	Output    string `json:"output,omitempty" description:"执行输出"`
+	Error     string `json:"error,omitempty" description:"错误信息"`
+	Duration  int64  `json:"duration,omitempty" description:"执行耗时(毫秒)"`
+	ExitCode  int    `json:"exit_code,omitempty" description:"退出码"`
+	StartTime string `json:"start_time,omitempty" description:"开始时间"`
+	EndTime   string `json:"end_time,omitempty" description:"结束时间"`
 }
 
 // ToExecutionResultVO 将 ExecutionResult 转换为 ExecutionResultVO
