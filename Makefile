@@ -185,10 +185,10 @@ agent-run:
 deps:
 	$(GOMOD) tidy
 
-# Generate swagger documentation
-swag:
+# Generate OpenAPI documentation (Huma, double instance)
+openapi:
 	@mkdir -p docs/public
-	go run github.com/swaggo/swag/cmd/swag@latest init -g main.go -o ./docs/public --ot json,yaml
+	go run ./cmd/export-openapi
 
 docs-dev:
 	cd docs && npm run docs:dev
@@ -254,7 +254,7 @@ help:
 	@echo "  docker-dev-d     - Start isolated Docker dev environment (background)"
 	@echo "  docker-dev-down  - Stop Docker dev environment (keep caches)"
 	@echo "  docker-dev-clean - Stop and clean Docker dev environment (remove caches)"
-	@echo "  swag             - Generate swagger documentation and sync with docs"
+	@echo "  openapi          - Generate OpenAPI documentation (Huma, double instance)"
 	@echo "  docs-dev         - Run documentation development server"
 	@echo "  docs-build       - Build documentation"
 	@echo "  help             - Show this help message"

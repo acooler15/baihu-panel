@@ -12,15 +12,15 @@ import '@scalar/api-reference/style.css'
     <ApiReference 
       :configuration="{ 
         spec: { 
-          url: '/baihu-panel/open2api-openapi.json' 
+          url: '/baihu-panel/api-openapi.json' 
         },
         theme: 'alternate',
         showSidebar: true,
         withDefaultFonts: false,
         servers: [
           { 
-            url: '{protocol}://{host}:{port}/open2api/v1',
-            description: '对外开放 API（Bearer Token 鉴权）',
+            url: '{protocol}://{host}:{port}/api/v1',
+            description: '内部管理 API（Cookie 会话鉴权）',
             variables: {
               protocol: { default: 'http', enum: ['http', 'https'] },
               host: { default: 'localhost' },

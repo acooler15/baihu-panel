@@ -61,12 +61,8 @@ COPY . .
 # Copy frontend dist (needed for embedding)
 COPY --from=frontend-builder /app/web/dist ./internal/static/dist
 
-# Generate Swagger (Optional: better to commit docs and only copy, but if needed, install once)
-# If openapi_docs exists, just use it, otherwise generate.
-# Here we avoid go run @latest by copying it if you have it locally.
-# If you don't, we install it once to the image.
-RUN go install github.com/swaggo/swag/cmd/swag@latest
-RUN swag init -g main.go -o ./openapi_docs
+# Generate OpenAPI docs (Huma, double instance) into docs/public/
+RUN go run ./cmd/export-openapi
 
 # Build Go binary using cache mounts for faster builds
 RUN --mount=type=cache,target=/go/pkg/mod \

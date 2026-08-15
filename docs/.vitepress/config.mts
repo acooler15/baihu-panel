@@ -16,6 +16,7 @@ export default defineConfig({
             { text: '快速开始', link: '/guide/introduction' },
             { text: '部署指南', link: '/guide/deployment' },
             { text: 'API 文档', link: '/guide/api' },
+            { text: '管理 API', link: '/guide/api-admin' },
             { text: '下载量', link: '/guide/package-stats' }
         ],
 
@@ -26,7 +27,8 @@ export default defineConfig({
                     { text: '项目介绍', link: '/guide/introduction' },
                     { text: '部署说明', link: '/guide/deployment' },
                     { text: '开始使用', link: '/guide/getting-started' },
-                    { text: 'API 文档', link: '/guide/api' }
+                    { text: 'API 文档', link: '/guide/api' },
+                    { text: '管理 API', link: '/guide/api-admin' }
                 ]
             },
             {

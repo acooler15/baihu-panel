@@ -56,8 +56,8 @@ bin/
 docs/.vitepress/dist/
 docs/.vitepress/cache/
 docs/node_modules/
-docs/public/swagger.json
-docs/public/swagger.yaml
+docs/public/api-openapi.json
+docs/public/open2api-openapi.json
 
 # OpenAPI
 openapi_docs/

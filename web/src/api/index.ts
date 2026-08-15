@@ -103,13 +103,14 @@ export async function request<T>(url: string, options?: RequestInit): Promise<T>
 
   const json: ApiResponse<T> = await res.json()
 
-  if (json.code === 401) {
+  // 过渡期：双判断兼容（HTTP 状态码 = 业务码 + 响应体 code 字段）
+  if (res.status === 401 || json.code === 401) {
     // 未登录或登录过期，跳转到登录页
     window.location.href = BASE_URL + '/login'
     throw new Error(json.msg || '请先登录')
   }
 
-  if (json.code !== 200) {
+  if (!res.ok || json.code !== 200) {
     throw new Error(json.msg || '请求失败')
   }
 
@@ -208,7 +209,14 @@ export const api = {
       return fetch(`${API_BASE_URL}/env/${id}${query}`, {
         method: 'DELETE',
         credentials: 'include'
-      }).then(res => res.json() as Promise<ApiResponse<any>>)
+      }).then(async res => {
+        const json = await res.json() as Promise<ApiResponse<any>>
+        if (res.status === 401 || json.code === 401) {
+          window.location.href = BASE_URL + '/login'
+          throw new Error(json.msg || '请先登录')
+        }
+        return json
+      })
     }
   },
   execute: {
@@ -289,11 +297,11 @@ export const api = {
         body: formData
       })
       const json: ApiResponse<null> = await res.json()
-      if (json.code === 401) {
+      if (res.status === 401 || json.code === 401) {
         window.location.href = BASE_URL + '/login'
         throw new Error('请先登录')
       }
-      if (json.code !== 200) throw new Error(json.msg || '恢复失败')
+      if (!res.ok || json.code !== 200) throw new Error(json.msg || '恢复失败')
     }
   },
   files: {
@@ -318,11 +326,11 @@ export const api = {
         body: formData
       })
       const json: ApiResponse<null> = await res.json()
-      if (json.code === 401) {
+      if (res.status === 401 || json.code === 401) {
         window.location.href = BASE_URL + '/login'
         throw new Error('请先登录')
       }
-      if (json.code !== 200) throw new Error(json.msg || '上传失败')
+      if (!res.ok || json.code !== 200) throw new Error(json.msg || '上传失败')
     },
     uploadFiles: async (files: FileList, paths: string[], targetPath?: string) => {
       const formData = new FormData()
@@ -341,11 +349,11 @@ export const api = {
         body: formData
       })
       const json: ApiResponse<null> = await res.json()
-      if (json.code === 401) {
+      if (res.status === 401 || json.code === 401) {
         window.location.href = BASE_URL + '/login'
         throw new Error('请先登录')
       }
-      if (json.code !== 200) throw new Error(json.msg || '上传失败')
+      if (!res.ok || json.code !== 200) throw new Error(json.msg || '上传失败')
     }
   },
   deps: {
@@ -460,11 +468,11 @@ export const api = {
         body: formData
       })
       const json: ApiResponse<{ message: string, theme: string }> = await res.json()
-      if (json.code === 401) {
+      if (res.status === 401 || json.code === 401) {
         window.location.href = BASE_URL + '/login'
         throw new Error('请先登录')
       }
-      if (json.code !== 200) throw new Error(json.msg || '上传失败')
+      if (!res.ok || json.code !== 200) throw new Error(json.msg || '上传失败')
       return json.data
     },
     setActive: (name: string) => request<{ message: string }>('/webui/active', { method: 'PUT', body: JSON.stringify({ name }) }),

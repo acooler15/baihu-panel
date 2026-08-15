@@ -31,8 +31,8 @@ jobs:
       - name: Build Web
         run: make build-web
 
-      - name: Generate Swagger
-        run: make swag
+      - name: Generate OpenAPI
+        run: make openapi
 
       - name: Build Binaries
         run: |
