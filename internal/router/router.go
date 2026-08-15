@@ -4,6 +4,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/engigu/baihu-panel/internal/constant"
 	"github.com/engigu/baihu-panel/internal/controllers"
 	"github.com/engigu/baihu-panel/internal/middleware"
 	"github.com/engigu/baihu-panel/internal/services"
@@ -35,6 +37,11 @@ type Controllers struct {
 	Interconnect *controllers.InterconnectController
 	Data         *controllers.DataController
 	Tag          *controllers.TagController
+
+	// Huma 实例（双文档方案）
+	// APIV1Huma 挂载于 /api/v1，Open2APIV1Huma 挂载于 /open2api/v1
+	APIV1Huma      huma.API
+	Open2APIV1Huma huma.API
 }
 
 func Setup(c *Controllers) *gin.Engine {
@@ -75,9 +82,18 @@ func Setup(c *Controllers) *gin.Engine {
 	initPublicAPIRoutes(apiV1, c)     // 公开接口 (无需认证)
 	initAuthorizedAPIRoutes(apiV1, c) // 授权接口 (需 JWT)
 
+	// 3.1 Huma 实例（双文档方案）：挂载于 /api/v1，暂不注册任何接口
+	// API 版本号与编译产物版本号保持一致（由 Makefile LDFLAGS 注入，默认 "dev"）
+	c.APIV1Huma = newHuma(router, "/api/v1", "Baihu Panel API", constant.Version,
+		"内部管理 API。需通过登录后的 Cookie 会话进行鉴权。")
+
 	// 4. [ location /api/agent ] Agent 相关 API 路由组
 	initAgentAPIRoutes(root, c)
 	initOpenAPIV1Routes(root, c)
+
+	// 4.1 Huma 实例（双文档方案）：挂载于 /open2api/v1，暂不注册任何接口
+	c.Open2APIV1Huma = newHuma(router, "/open2api/v1", "Baihu Panel OpenAPI", constant.Version,
+		"对外开放 API。需通过 Bearer Token 进行鉴权。")
 
 	// =========================================================================
 	// [ location / ] 全局 404 兜底与 SPA 渲染
