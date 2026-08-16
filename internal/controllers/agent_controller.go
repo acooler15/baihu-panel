@@ -10,7 +10,6 @@ import (
 	"github.com/engigu/baihu-panel/internal/constant"
 	"github.com/engigu/baihu-panel/internal/logger"
 	"github.com/engigu/baihu-panel/internal/models"
-	"github.com/engigu/baihu-panel/internal/models/vo"
 	"github.com/engigu/baihu-panel/internal/services"
 	"github.com/engigu/baihu-panel/internal/services/tasks"
 	"github.com/engigu/baihu-panel/internal/utils"
@@ -39,12 +38,6 @@ func NewAgentController(settingsService *services.SettingsService) *AgentControl
 	}
 }
 
-// List 获取 Agent 列表
-func (c *AgentController) List(ctx *gin.Context) {
-	agents := c.agentService.List()
-	utils.Success(ctx, vo.ToAgentVOListFromModels(agents))
-}
-
 // getActiveSchedulerConfig 获取 Agent 的实际调度配置（若为空或零值，则使用系统默认的 settings）
 func (c *AgentController) getActiveSchedulerConfig(agent *models.Agent) map[string]interface{} {
 	workerCount := agent.SchedulerConfig.WorkerCount
@@ -68,148 +61,13 @@ func (c *AgentController) getActiveSchedulerConfig(agent *models.Agent) map[stri
 	}
 }
 
-// Update 更新 Agent
-func (c *AgentController) Update(ctx *gin.Context) {
-	id := ctx.Param("id")
-	if id == "" {
-		utils.BadRequest(ctx, "无效的 ID")
-		return
-	}
-
-	var req struct {
-		Name            string                     `json:"name" binding:"required"`
-		Description     string                     `json:"description"`
-		Enabled         bool                       `json:"enabled"`
-		SchedulerConfig *vo.AgentSchedulerConfigVO `json:"scheduler_config"`
-	}
-
-	if err := ctx.ShouldBindJSON(&req); err != nil {
-		utils.BadRequest(ctx, "参数错误")
-		return
-	}
-
-	// 获取旧状态
-	oldAgent := c.agentService.GetByID(id)
-	if oldAgent == nil {
-		utils.NotFound(ctx, "Agent 不存在")
-		return
-	}
-	wasEnabled := utils.DerefBool(oldAgent.Enabled, true)
-
-	var schedulerConfig models.AgentSchedulerConfig
-	if req.SchedulerConfig != nil {
-		schedulerConfig.WorkerCount = req.SchedulerConfig.WorkerCount
-		schedulerConfig.QueueSize = req.SchedulerConfig.QueueSize
-		schedulerConfig.RateInterval = time.Duration(req.SchedulerConfig.RateInterval) * time.Millisecond
-		schedulerConfig.Verbose = req.SchedulerConfig.Verbose
-		schedulerConfig.StrictQueue = req.SchedulerConfig.StrictQueue
-	}
-
-	if err := c.agentService.Update(id, req.Name, req.Description, req.Enabled, schedulerConfig); err != nil {
-		utils.ServerError(ctx, err.Error())
-		return
-	}
-
-	// 如果启用状态发生变化，通知 Agent
-	if wasEnabled != req.Enabled {
-		if req.Enabled {
-			// 启用：发送任务列表
-			c.wsManager.SendToAgent(id, services.WSTypeEnabled, map[string]interface{}{
-				"message": "Agent 已启用",
-			})
-			// 发送任务列表
-			c.wsManager.BroadcastTasks(id)
-		} else {
-			// 禁用：发送禁用消息，Agent 收到后清空任务
-			c.wsManager.SendToAgent(id, services.WSTypeDisabled, map[string]interface{}{
-				"message": "Agent 已禁用",
-			})
-		}
-	}
-
-	// 推送最新的调度配置给 Agent (如果 Agent 在线)
-	if req.Enabled {
-		// 重新加载已更新的 Agent 信息以获取正确的 SchedulerConfig
-		updatedAgent := c.agentService.GetByID(id)
-		if updatedAgent != nil {
-			c.wsManager.SendToAgent(id, services.WSTypeConnected, map[string]interface{}{
-				"agent_id":         id,
-				"name":             req.Name,
-				"scheduler_config": c.getActiveSchedulerConfig(updatedAgent),
-			})
-		}
-	}
-
-	utils.SuccessMsg(ctx, "更新成功")
-}
-
-// Delete 删除 Agent
-func (c *AgentController) Delete(ctx *gin.Context) {
-	id := ctx.Param("id")
-	if id == "" {
-		utils.BadRequest(ctx, "无效的 ID")
-		return
-	}
-
-	if err := c.agentService.Delete(id); err != nil {
-		utils.BadRequest(ctx, err.Error())
-		return
-	}
-
-	utils.SuccessMsg(ctx, "删除成功")
-}
-
-// RegenerateToken 重新生成 Token
-func (c *AgentController) RegenerateToken(ctx *gin.Context) {
-	id := ctx.Param("id")
-	if id == "" {
-		utils.BadRequest(ctx, "无效的 ID")
-		return
-	}
-
-	token, err := c.agentService.RegenerateToken(id)
-	if err != nil {
-		utils.ServerError(ctx, err.Error())
-		return
-	}
-
-	utils.Success(ctx, gin.H{"token": token})
-}
-
 // ========== Agent API（供 Agent 调用）==========
-
-// Register Agent 注册（无需认证）
-func (c *AgentController) Register(ctx *gin.Context) {
-	var req models.AgentRegisterRequest
-	if err := ctx.ShouldBindJSON(&req); err != nil {
-		utils.BadRequest(ctx, "参数错误")
-		return
-	}
-
-	if req.Name == "" {
-		utils.BadRequest(ctx, "名称不能为空")
-		return
-	}
-
-	ip := ctx.ClientIP()
-	agent, token, err := c.agentService.Register(&req, ip)
-	if err != nil {
-		utils.BadRequest(ctx, err.Error())
-		return
-	}
-
-	utils.Success(ctx, gin.H{
-		"agent_id": agent.ID,
-		"token":    token,
-		"message":  "注册成功",
-	})
-}
 
 // Heartbeat Agent 心跳
 func (c *AgentController) Heartbeat(ctx *gin.Context) {
 	token := c.getAgentToken(ctx)
 	if token == "" {
-		utils.Unauthorized(ctx, "缺少认证 Token")
+		ctx.JSON(http.StatusUnauthorized, utils.Response{Code: 401, Msg: "缺少认证 Token"})
 		return
 	}
 
@@ -226,7 +84,7 @@ func (c *AgentController) Heartbeat(ctx *gin.Context) {
 	ip := ctx.ClientIP()
 	agent, err := c.agentService.Heartbeat(token, ip, req.Version, req.BuildTime, req.Hostname, req.OS, req.Arch)
 	if err != nil {
-		utils.Unauthorized(ctx, err.Error())
+		ctx.JSON(http.StatusUnauthorized, utils.Response{Code: 401, Msg: err.Error()})
 		return
 	}
 
@@ -240,12 +98,16 @@ func (c *AgentController) Heartbeat(ctx *gin.Context) {
 		c.agentService.ClearForceUpdate(agent.ID)
 	}
 
-	utils.Success(ctx, gin.H{
-		"agent_id":       agent.ID,
-		"name":           agent.Name,
-		"need_update":    needUpdate,
-		"force_update":   forceUpdate,
-		"latest_version": latestVersion,
+	ctx.JSON(http.StatusOK, utils.Response{
+		Code: 200,
+		Msg:  "success",
+		Data: gin.H{
+			"agent_id":       agent.ID,
+			"name":           agent.Name,
+			"need_update":    needUpdate,
+			"force_update":   forceUpdate,
+			"latest_version": latestVersion,
+		},
 	})
 }
 
@@ -253,7 +115,7 @@ func (c *AgentController) Heartbeat(ctx *gin.Context) {
 func (c *AgentController) GetTasks(ctx *gin.Context) {
 	token := c.getAgentToken(ctx)
 	if token == "" {
-		utils.Unauthorized(ctx, "缺少认证 Token")
+		ctx.JSON(http.StatusUnauthorized, utils.Response{Code: 401, Msg: "缺少认证 Token"})
 		return
 	}
 
@@ -273,19 +135,23 @@ func (c *AgentController) GetTasks(ctx *gin.Context) {
 	}
 
 	if agent == nil {
-		utils.Unauthorized(ctx, "无效的 Token")
+		ctx.JSON(http.StatusUnauthorized, utils.Response{Code: 401, Msg: "无效的 Token"})
 		return
 	}
 
 	if !utils.DerefBool(agent.Enabled, true) {
-		utils.Forbidden(ctx, "Agent 已禁用")
+		ctx.JSON(http.StatusForbidden, utils.Response{Code: 403, Msg: "Agent 已禁用"})
 		return
 	}
 
 	tasks := c.agentService.GetTasks(agent.ID)
-	utils.Success(ctx, gin.H{
-		"agent_id": agent.ID,
-		"tasks":    tasks,
+	ctx.JSON(http.StatusOK, utils.Response{
+		Code: 200,
+		Msg:  "success",
+		Data: gin.H{
+			"agent_id": agent.ID,
+			"tasks":    tasks,
+		},
 	})
 }
 
@@ -293,35 +159,35 @@ func (c *AgentController) GetTasks(ctx *gin.Context) {
 func (c *AgentController) ReportResult(ctx *gin.Context) {
 	token := c.getAgentToken(ctx)
 	if token == "" {
-		utils.Unauthorized(ctx, "缺少认证 Token")
+		ctx.JSON(http.StatusUnauthorized, utils.Response{Code: 401, Msg: "缺少认证 Token"})
 		return
 	}
 
 	agent := c.agentService.GetByToken(token)
 	if agent == nil {
-		utils.Unauthorized(ctx, "无效的 Token")
+		ctx.JSON(http.StatusUnauthorized, utils.Response{Code: 401, Msg: "无效的 Token"})
 		return
 	}
 
 	if !utils.DerefBool(agent.Enabled, true) {
-		utils.Forbidden(ctx, "Agent 已禁用")
+		ctx.JSON(http.StatusForbidden, utils.Response{Code: 403, Msg: "Agent 已禁用"})
 		return
 	}
 
 	var result models.AgentTaskResult
 	if err := ctx.ShouldBindJSON(&result); err != nil {
-		utils.BadRequest(ctx, "参数错误")
+		ctx.JSON(http.StatusBadRequest, utils.Response{Code: 400, Msg: "参数错误"})
 		return
 	}
 
 	result.AgentID = agent.ID
 
 	if err := c.agentService.ReportResult(&result); err != nil {
-		utils.ServerError(ctx, err.Error())
+		ctx.JSON(http.StatusInternalServerError, utils.Response{Code: 500, Msg: err.Error()})
 		return
 	}
 
-	utils.SuccessMsg(ctx, "上报成功")
+	ctx.JSON(http.StatusOK, utils.Response{Code: 200, Msg: "上报成功"})
 }
 
 // getAgentToken 从请求头获取 Agent Token
@@ -345,7 +211,7 @@ func (c *AgentController) Download(ctx *gin.Context) {
 
 	data, filename, err := c.agentService.GetAgentBinary(osType, arch)
 	if err != nil {
-		utils.NotFound(ctx, err.Error())
+		ctx.JSON(http.StatusNotFound, utils.Response{Code: 404, Msg: err.Error()})
 		return
 	}
 
@@ -353,33 +219,6 @@ func (c *AgentController) Download(ctx *gin.Context) {
 	ctx.Header("Content-Type", "application/gzip")
 	ctx.Header("Content-Length", strconv.Itoa(len(data)))
 	ctx.Data(200, "application/gzip", data)
-}
-
-// GetVersion 获取 Agent 最新版本信息
-func (c *AgentController) GetVersion(ctx *gin.Context) {
-	version := c.agentService.GetLatestVersion()
-	platforms := c.agentService.GetAvailablePlatforms()
-
-	utils.Success(ctx, gin.H{
-		"version":   version,
-		"platforms": platforms,
-	})
-}
-
-// ForceUpdate 强制更新指定 Agent
-func (c *AgentController) ForceUpdate(ctx *gin.Context) {
-	id := ctx.Param("id")
-	if id == "" {
-		utils.BadRequest(ctx, "无效的 ID")
-		return
-	}
-
-	if err := c.agentService.SetForceUpdate(id); err != nil {
-		utils.ServerError(ctx, err.Error())
-		return
-	}
-
-	utils.SuccessMsg(ctx, "已标记强制更新，Agent 下次心跳时将自动更新")
 }
 
 // ========== WebSocket ==========
@@ -674,62 +513,6 @@ func (c *AgentController) handleTaskLog(_ *models.Agent, data json.RawMessage) {
 // NotifyTaskUpdate 通知 Agent 任务更新
 func (c *AgentController) NotifyTaskUpdate(agentID string) {
 	c.wsManager.BroadcastTasks(agentID)
-}
-
-// ========== 令牌管理 ==========
-
-// ListTokens 获取令牌列表
-func (c *AgentController) ListTokens(ctx *gin.Context) {
-	tokens := c.agentService.ListTokens()
-	utils.Success(ctx, vo.ToAgentTokenVOListFromModels(tokens))
-}
-
-// CreateToken 创建令牌
-func (c *AgentController) CreateToken(ctx *gin.Context) {
-	var req struct {
-		Remark    string `json:"remark"`
-		MaxUses   int    `json:"max_uses"`
-		ExpiresAt string `json:"expires_at"` // 格式: 2006-01-02 15:04:05
-	}
-
-	if err := ctx.ShouldBindJSON(&req); err != nil {
-		utils.BadRequest(ctx, "参数错误")
-		return
-	}
-
-	var expiresAt *time.Time
-	if req.ExpiresAt != "" {
-		t, err := time.ParseInLocation("2006-01-02 15:04:05", req.ExpiresAt, time.Local)
-		if err != nil {
-			utils.BadRequest(ctx, "过期时间格式错误")
-			return
-		}
-		expiresAt = &t
-	}
-
-	token, err := c.agentService.CreateToken(req.Remark, req.MaxUses, expiresAt)
-	if err != nil {
-		utils.ServerError(ctx, err.Error())
-		return
-	}
-
-	utils.Success(ctx, vo.ToAgentTokenVO(token))
-}
-
-// DeleteToken 删除令牌
-func (c *AgentController) DeleteToken(ctx *gin.Context) {
-	id := ctx.Param("id")
-	if id == "" {
-		utils.BadRequest(ctx, "无效的 ID")
-		return
-	}
-
-	if err := c.agentService.DeleteToken(id); err != nil {
-		utils.ServerError(ctx, err.Error())
-		return
-	}
-
-	utils.SuccessMsg(ctx, "删除成功")
 }
 
 // getIntSetting 辅助方法

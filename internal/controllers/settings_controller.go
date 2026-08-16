@@ -1,29 +1,18 @@
 package controllers
 
 import (
-	"path/filepath"
-	"runtime"
-	"strconv"
-
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
-	"strings"
+	"path/filepath"
 	"time"
 
 	"github.com/engigu/baihu-panel/internal/constant"
-	"github.com/engigu/baihu-panel/internal/database"
-	"github.com/engigu/baihu-panel/internal/eventbus"
-	"github.com/engigu/baihu-panel/internal/models"
-	"github.com/engigu/baihu-panel/internal/models/vo"
 	"github.com/engigu/baihu-panel/internal/services"
 	"github.com/engigu/baihu-panel/internal/services/tasks"
-	"github.com/engigu/baihu-panel/internal/tunnel"
 	"github.com/engigu/baihu-panel/internal/utils"
 
 	"github.com/gin-gonic/gin"
-	"github.com/shirou/gopsutil/v3/process"
 )
 
 type SettingsController struct {
@@ -44,142 +33,10 @@ func NewSettingsController(userService *services.UserService, loginLogService *s
 	}
 }
 
-// ChangePassword 修改密码及账号信息
-func (sc *SettingsController) ChangePassword(c *gin.Context) {
-	// 演示模式下禁止修改
-	if constant.DemoMode {
-		utils.BadRequest(c, "演示模式下不能修改账号或密码")
-		return
-	}
-
-	var req struct {
-		OldUsername string `json:"old_username"`
-		Username    string `json:"username"`
-		OldPassword string `json:"old_password" binding:"required"`
-		NewPassword string `json:"new_password"`
-	}
-
-	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.BadRequest(c, "参数错误")
-		return
-	}
-
-	userID := c.GetString("userID")
-	var user *models.User
-	res := database.DB.Where("id = ?", userID).Limit(1).Find(&user)
-	if res.Error != nil || res.RowsAffected == 0 {
-		utils.NotFound(c, "用户不存在")
-		return
-	}
-
-	// 统一校验原账密
-	if req.OldUsername != "" && req.OldUsername != user.Username {
-		utils.BadRequest(c, "原账号不正确")
-		return
-	}
-
-	if !sc.userService.AuthenticateUser(user.Username, req.OldPassword) {
-		utils.BadRequest(c, "原密码错误")
-		return
-	}
-
-	var updated bool
-	var logoutRequired bool
-
-	// 1. 处理用户名修改
-	if req.Username != "" && req.Username != user.Username {
-		if err := sc.userService.UpdateAccount(user.ID, req.Username); err != nil {
-			utils.BadRequest(c, err.Error())
-			return
-		}
-		updated = true
-		logoutRequired = true
-	}
-
-	// 2. 处理密码修改
-	if req.NewPassword != "" {
-		if len(req.NewPassword) < 6 {
-			utils.BadRequest(c, "新密码至少6位")
-			return
-		}
-		if err := sc.userService.UpdatePassword(user.ID, req.NewPassword); err != nil {
-			utils.ServerError(c, "修改密码失败")
-			return
-		}
-		updated = true
-		logoutRequired = true
-	}
-
-	if !updated {
-		utils.SuccessMsg(c, "未检测到变更内容")
-		return
-	}
-
-	eventbus.DefaultBus.Publish(eventbus.Event{
-		Type: constant.EventPasswordChanged,
-		Payload: map[string]interface{}{
-			"username": user.Username,
-		},
-	})
-
-	msg := "保存成功"
-	if logoutRequired {
-		msg += "，请重新登录"
-	}
-	utils.SuccessMsg(c, msg)
-}
-
-// CleanLogs 清理日志 - 已移除，改为任务级别的日志清理配置
-
-// GetSiteSettings 获取站点设置
-func (sc *SettingsController) GetSiteSettings(c *gin.Context) {
-	settings := sc.settingsService.GetSection(constant.SectionSite)
-
-	// 纠正数据库中的空值，防止因配置冲突被意外置空
-	if settings[constant.KeyTitle] == "" {
-		settings[constant.KeyTitle] = "白虎面板"
-		sc.settingsService.Set(constant.SectionSite, constant.KeyTitle, "白虎面板")
-	}
-	if settings[constant.KeySubtitle] == "" {
-		settings[constant.KeySubtitle] = "极致轻量、高性能的自动化任务调度平台"
-		sc.settingsService.Set(constant.SectionSite, constant.KeySubtitle, "极致轻量、高性能的自动化任务调度平台")
-	}
-	if settings[constant.KeyIcon] == "" {
-		settings[constant.KeyIcon] = constant.DefaultIcon
-		sc.settingsService.Set(constant.SectionSite, constant.KeyIcon, constant.DefaultIcon)
-	}
-
-	// 解析 JSON 格式的 OpenAPI Token
-	if tokenJson, ok := settings[constant.KeyOpenapiToken]; ok && tokenJson != "" {
-		var tokenConfig vo.TokenConfig
-		if err := json.Unmarshal([]byte(tokenJson), &tokenConfig); err == nil {
-			settings["openapi_token"] = tokenConfig.Token
-			settings["openapi_token_expire"] = tokenConfig.ExpireAt
-			if tokenConfig.Enabled {
-				settings["openapi_enabled"] = "true"
-			} else {
-				settings["openapi_enabled"] = "false"
-			}
-		}
-	}
-
-	// 获取日志清理配置
-	settings["system_notice_days"] = sc.settingsService.Get(constant.SectionSystem, constant.KeySystemNoticeDays)
-	settings["system_notice_max_count"] = sc.settingsService.Get(constant.SectionSystem, constant.KeySystemNoticeMaxCount)
-	settings["push_log_days"] = sc.settingsService.Get(constant.SectionSystem, constant.KeyPushLogDays)
-	settings["push_log_max_count"] = sc.settingsService.Get(constant.SectionSystem, constant.KeyPushLogMaxCount)
-	settings["login_log_days"] = sc.settingsService.Get(constant.SectionSystem, constant.KeyLoginLogDays)
-	settings["login_log_max_count"] = sc.settingsService.Get(constant.SectionSystem, constant.KeyLoginLogMaxCount)
-	settings["scheduler_log_days"] = sc.settingsService.Get(constant.SectionSystem, constant.KeySchedulerLogDays)
-	settings["scheduler_log_max_count"] = sc.settingsService.Get(constant.SectionSystem, constant.KeySchedulerLogMaxCount)
-
-	utils.Success(c, settings)
-}
-
 // GetPublicSiteSettings 获取公开的站点设置（无需认证）
 func (sc *SettingsController) GetPublicSiteSettings(c *gin.Context) {
 	settings := sc.settingsService.GetSection(constant.SectionSite)
-	
+
 	title := settings[constant.KeyTitle]
 	if title == "" {
 		title = "白虎面板"
@@ -194,206 +51,16 @@ func (sc *SettingsController) GetPublicSiteSettings(c *gin.Context) {
 	}
 
 	// 只返回公开信息
-	utils.Success(c, gin.H{
-		constant.KeyTitle:    title,
-		constant.KeySubtitle: subtitle,
-		constant.KeyIcon:     icon,
-		"demo_mode":          constant.DemoMode,
+	c.JSON(http.StatusOK, utils.Response{
+		Code: 200,
+		Msg:  "success",
+		Data: gin.H{
+			constant.KeyTitle:    title,
+			constant.KeySubtitle: subtitle,
+			constant.KeyIcon:     icon,
+			"demo_mode":          constant.DemoMode,
+		},
 	})
-}
-
-// UpdateSiteSettings 更新站点设置
-func (sc *SettingsController) UpdateSiteSettings(c *gin.Context) {
-	var req struct {
-		Title                string `json:"title"`
-		Subtitle             string `json:"subtitle"`
-		Icon                 string `json:"icon"`
-		PageSize             string `json:"page_size"`
-		CookieDays           string `json:"cookie_days"`
-		OpenapiEnabled       bool   `json:"openapi_enabled"`
-		OpenapiToken         string `json:"openapi_token"`
-		OpenapiTokenExpire   string `json:"openapi_token_expire"`
-		SystemNoticeDays     string `json:"system_notice_days"`
-		SystemNoticeMaxCount string `json:"system_notice_max_count"`
-		PushLogDays          string `json:"push_log_days"`
-		PushLogMaxCount      string `json:"push_log_max_count"`
-		LoginLogDays         string `json:"login_log_days"`
-		LoginLogMaxCount     string `json:"login_log_max_count"`
-		SchedulerLogDays     string `json:"scheduler_log_days"`
-		SchedulerLogMaxCount string `json:"scheduler_log_max_count"`
-	}
-
-	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.BadRequest(c, "参数错误")
-		return
-	}
-
-	openapiTokenJson := ""
-	if req.OpenapiToken != "" || req.OpenapiTokenExpire != "" || req.OpenapiEnabled {
-		tokenConfig := vo.TokenConfig{
-			Enabled:  req.OpenapiEnabled,
-			Token:    req.OpenapiToken,
-			ExpireAt: req.OpenapiTokenExpire,
-		}
-		if b, err := json.Marshal(tokenConfig); err == nil {
-			openapiTokenJson = string(b)
-		}
-	}
-
-	values := map[string]string{
-		constant.KeyTitle:        req.Title,
-		constant.KeySubtitle:     req.Subtitle,
-		constant.KeyIcon:         req.Icon,
-		constant.KeyPageSize:     req.PageSize,
-		constant.KeyCookieDays:   req.CookieDays,
-		constant.KeyOpenapiToken: openapiTokenJson,
-	}
-
-	if err := sc.settingsService.SetSection(constant.SectionSite, values); err != nil {
-		utils.ServerError(c, "保存失败")
-		return
-	}
-
-	// 保存日志清理配置
-	sc.settingsService.Set(constant.SectionSystem, constant.KeySystemNoticeDays, req.SystemNoticeDays)
-	sc.settingsService.Set(constant.SectionSystem, constant.KeySystemNoticeMaxCount, req.SystemNoticeMaxCount)
-	sc.settingsService.Set(constant.SectionSystem, constant.KeyPushLogDays, req.PushLogDays)
-	sc.settingsService.Set(constant.SectionSystem, constant.KeyPushLogMaxCount, req.PushLogMaxCount)
-	sc.settingsService.Set(constant.SectionSystem, constant.KeyLoginLogDays, req.LoginLogDays)
-	sc.settingsService.Set(constant.SectionSystem, constant.KeyLoginLogMaxCount, req.LoginLogMaxCount)
-	sc.settingsService.Set(constant.SectionSystem, constant.KeySchedulerLogDays, req.SchedulerLogDays)
-	sc.settingsService.Set(constant.SectionSystem, constant.KeySchedulerLogMaxCount, req.SchedulerLogMaxCount)
-
-	utils.SuccessMsg(c, "保存成功")
-}
-
-// GenerateOpenapiToken 随机生成OpenAPI Token
-func (sc *SettingsController) GenerateOpenapiToken(c *gin.Context) {
-	utils.Success(c, gin.H{
-		"token": strings.ToLower(utils.RandomString(32)),
-	})
-}
-
-// GetSchedulerSettings 获取调度设置
-func (sc *SettingsController) GetSchedulerSettings(c *gin.Context) {
-	settings := sc.settingsService.GetSection(constant.SectionScheduler)
-	utils.Success(c, settings)
-}
-
-// UpdateSchedulerSettings 更新调度设置
-func (sc *SettingsController) UpdateSchedulerSettings(c *gin.Context) {
-	var req struct {
-		WorkerCount  string `json:"worker_count"`
-		QueueSize    string `json:"queue_size"`
-		RateInterval string `json:"rate_interval"`
-	}
-
-	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.BadRequest(c, "参数错误")
-		return
-	}
-
-	var workerCount int
-	if _, err := fmt.Sscanf(req.WorkerCount, "%d", &workerCount); err != nil || workerCount < 1 || workerCount > 1000 {
-		utils.BadRequest(c, "工作线程数必须在 1 至 1000 之间")
-		return
-	}
-
-	var queueSize int
-	if _, err := fmt.Sscanf(req.QueueSize, "%d", &queueSize); err != nil || queueSize < 1 || queueSize > 50000 {
-		utils.BadRequest(c, "等待队列容量必须在 1 至 50000 之间")
-		return
-	}
-
-	var rateInterval int
-	if _, err := fmt.Sscanf(req.RateInterval, "%d", &rateInterval); err != nil || rateInterval < 1 {
-		utils.BadRequest(c, "限频间隔必须为正整数")
-		return
-	}
-
-	values := map[string]string{
-		constant.KeyWorkerCount:  req.WorkerCount,
-		constant.KeyQueueSize:    req.QueueSize,
-		constant.KeyRateInterval: req.RateInterval,
-	}
-
-	if err := sc.settingsService.SetSection(constant.SectionScheduler, values); err != nil {
-		utils.ServerError(c, "保存失败")
-		return
-	}
-
-	// 重新加载 executor service
-	if sc.executorService != nil {
-		sc.executorService.Reload()
-	}
-
-	utils.SuccessMsg(c, "保存成功")
-}
-
-// GetPaths 获取系统路径信息
-func (sc *SettingsController) GetPaths(c *gin.Context) {
-	absScriptsDir, _ := filepath.Abs(constant.ScriptsWorkDir)
-	utils.Success(c, gin.H{
-		"scripts_dir": absScriptsDir,
-	})
-}
-
-// GetAbout 获取关于信息
-func (sc *SettingsController) GetAbout(c *gin.Context) {
-	var taskCount, logCount, envCount int64
-	database.DB.Model(&models.Task{}).Count(&taskCount)
-	database.DB.Model(&models.TaskLog{}).Count(&logCount)
-	database.DB.Model(&models.EnvironmentVariable{}).Count(&envCount)
-
-	// 内存使用
-	memUsage := "N/A"
-	if p, err := process.NewProcess(int32(os.Getpid())); err == nil {
-		if memInfo, err := p.MemoryInfo(); err == nil {
-			memUsage = formatBytes(memInfo.RSS)
-		}
-	}
-
-	// 运行时间
-	uptime := formatDuration(time.Since(constant.StartTime))
-
-	// 获取远程最新版本
-	remoteVersion := ""
-	client := &http.Client{Timeout: 2 * time.Second}
-	req, err := http.NewRequest("GET", "https://api.github.com/repos/engigu/baihu-panel/releases/latest", nil)
-	if err == nil {
-		req.Header.Set("User-Agent", "baihu-panel")
-		if resp, err := client.Do(req); err == nil {
-			defer resp.Body.Close()
-			var release struct {
-				TagName string `json:"tag_name"`
-			}
-			if err := json.NewDecoder(resp.Body).Decode(&release); err == nil {
-				remoteVersion = release.TagName
-			}
-		}
-	}
-
-	utils.Success(c, gin.H{
-		"version":        constant.Version,
-		"remote_version": remoteVersion,
-		"build_time":     constant.BuildTime,
-		"mem_usage":      memUsage,
-		"goroutines":     runtime.NumGoroutine(),
-		"uptime":         uptime,
-		"task_count":     taskCount,
-		"log_count":      logCount,
-		"env_count":      envCount,
-	})
-}
-
-// GetChangelog 获取更新日志
-func (sc *SettingsController) GetChangelog(c *gin.Context) {
-	content, err := os.ReadFile("docs/guide/changelog.md")
-	if err != nil {
-		utils.Success(c, "暂无更新日志")
-		return
-	}
-	utils.Success(c, string(content))
 }
 
 // formatBytes 格式化字节数
@@ -429,84 +96,18 @@ func formatDuration(d time.Duration) string {
 	return fmt.Sprintf("%d秒", seconds)
 }
 
-// GetLoginLogs 获取登录日志
-func (sc *SettingsController) GetLoginLogs(c *gin.Context) {
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
-	username := c.Query("username")
-
-	if page < 1 {
-		page = 1
-	}
-	if pageSize < 1 || pageSize > 100 {
-		pageSize = 10
-	}
-
-	logs, total, err := sc.loginLogService.List(page, pageSize, username)
-	if err != nil {
-		utils.ServerError(c, "获取登录日志失败")
-		return
-	}
-
-	// 将 AppLog 转换为 LoginLogVO 返回，保持前端兼容性
-	vos := make([]*vo.LoginLogVO, len(logs))
-	for i, log := range logs {
-		vos[i] = &vo.LoginLogVO{
-			ID:        log.ID,
-			Username:  log.Title,
-			IP:        log.RefID,
-			UserAgent: string(log.Content),
-			Status:    log.Status,
-			Message:   string(log.ErrorMsg),
-			CreatedAt: log.CreatedAt,
-		}
-	}
-
-	utils.Success(c, utils.PaginationData{
-		Data:     vos,
-		Total:    total,
-		Page:     page,
-		PageSize: pageSize,
-	})
-}
-
-// CreateBackup 创建备份
-func (sc *SettingsController) CreateBackup(c *gin.Context) {
-	_, err := sc.backupService.CreateBackup()
-	if err != nil {
-		utils.ServerError(c, "创建备份失败: "+err.Error())
-		return
-	}
-	utils.SuccessMsg(c, "备份创建成功")
-}
-
-// GetBackupStatus 获取备份状态
-func (sc *SettingsController) GetBackupStatus(c *gin.Context) {
-	filePath := sc.backupService.GetBackupFile()
-	var backupTime string
-	if filePath != "" {
-		if info, err := os.Stat(filePath); err == nil {
-			backupTime = info.ModTime().Format("2006-01-02 15:04:05")
-		}
-	}
-	utils.Success(c, gin.H{
-		"has_backup":  filePath != "",
-		"backup_time": backupTime,
-	})
-}
-
 // DownloadBackup 下载备份文件
 func (sc *SettingsController) DownloadBackup(c *gin.Context) {
 	filePath := sc.backupService.GetBackupFile()
 	if filePath == "" {
-		utils.NotFound(c, "没有可下载的备份")
+		c.JSON(http.StatusNotFound, utils.Response{Code: 404, Msg: "没有可下载的备份"})
 		return
 	}
 
 	// 检查文件是否存在
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
 		sc.backupService.ClearBackup()
-		utils.NotFound(c, "备份文件不存在")
+		c.JSON(http.StatusNotFound, utils.Response{Code: 404, Msg: "备份文件不存在"})
 		return
 	}
 
@@ -526,99 +127,23 @@ func (sc *SettingsController) DownloadBackup(c *gin.Context) {
 func (sc *SettingsController) RestoreBackup(c *gin.Context) {
 	file, err := c.FormFile("file")
 	if err != nil {
-		utils.BadRequest(c, "请上传备份文件")
+		c.JSON(http.StatusBadRequest, utils.Response{Code: 400, Msg: "请上传备份文件"})
 		return
 	}
 
 	// 保存上传的文件
 	tempPath := filepath.Join(os.TempDir(), file.Filename)
 	if err := c.SaveUploadedFile(file, tempPath); err != nil {
-		utils.ServerError(c, "保存文件失败")
+		c.JSON(http.StatusInternalServerError, utils.Response{Code: 500, Msg: "保存文件失败"})
 		return
 	}
 	defer os.Remove(tempPath)
 
 	// 恢复备份
 	if err := sc.backupService.Restore(tempPath); err != nil {
-		utils.ServerError(c, "恢复失败: "+err.Error())
+		c.JSON(http.StatusInternalServerError, utils.Response{Code: 500, Msg: "恢复失败: " + err.Error()})
 		return
 	}
 
-	utils.SuccessMsg(c, "恢复成功")
-}
-
-// GetSectionSettings 获取指定 section 的所有设置
-func (sc *SettingsController) GetSectionSettings(c *gin.Context) {
-	section := c.Param("section")
-	if section == "" {
-		utils.BadRequest(c, "参数错误")
-		return
-	}
-	settings := sc.settingsService.GetSection(section)
-	utils.Success(c, settings)
-}
-
-// UpdateSectionSettings 批量更新指定 section 的设置
-func (sc *SettingsController) UpdateSectionSettings(c *gin.Context) {
-	section := c.Param("section")
-	if section == "" {
-		utils.BadRequest(c, "参数错误")
-		return
-	}
-
-	var values map[string]string
-	if err := c.ShouldBindJSON(&values); err != nil {
-		utils.BadRequest(c, "参数错误")
-		return
-	}
-
-	if err := sc.settingsService.SetSection(section, values); err != nil {
-		utils.ServerError(c, "更新失败")
-		return
-	}
-
-	// 当互联配置发生改变时，通知 tunnel 模块立刻应用新角色，启动或停止相关的后台协程
-	if section == constant.SectionInterconnect {
-		if role, ok := values[constant.KeyInterconnectRole]; ok {
-			tunnel.ApplyRole(role)
-		}
-	}
-
-	utils.SuccessMsg(c, "保存成功")
-}
-
-// GetSetting 获取单个设置值
-func (sc *SettingsController) GetSetting(c *gin.Context) {
-	section := c.Param("section")
-	key := c.Param("key")
-
-	if section == "" || key == "" {
-		utils.BadRequest(c, "参数错误")
-		return
-	}
-
-	value := sc.settingsService.Get(section, key)
-	utils.Success(c, value)
-}
-
-// GenerateSettingToken 为指定设置生成随机token
-func (sc *SettingsController) GenerateSettingToken(c *gin.Context) {
-	section := c.Param("section")
-	key := c.Param("key")
-
-	if section == "" || key == "" {
-		utils.BadRequest(c, "参数错误")
-		return
-	}
-
-	// 生成32位随机token
-	token := strings.ToLower(utils.RandomString(32))
-
-	// 保存到数据库
-	if err := sc.settingsService.Set(section, key, token); err != nil {
-		utils.ServerError(c, "保存失败")
-		return
-	}
-
-	utils.Success(c, token)
+	c.JSON(http.StatusOK, utils.Response{Code: 200, Msg: "恢复成功"})
 }

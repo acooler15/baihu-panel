@@ -1,59 +1,9 @@
 package utils
 
-import (
-	"net/http"
-
-	"github.com/gin-gonic/gin"
-)
-
+// Response 通用 JSON 响应结构
+// 注意：所有接口已迁移至 Huma，此类型仅保留给仍使用 Gin 的特殊接口（WebSocket/SSE/文件流/Auth）做内联 JSON 响应。
 type Response struct {
 	Code int         `json:"code"`
 	Msg  string      `json:"msg"`
 	Data interface{} `json:"data,omitempty"`
-}
-
-func Success(c *gin.Context, data interface{}) {
-	c.JSON(http.StatusOK, Response{
-		Code: 200,
-		Msg:  "success",
-		Data: data,
-	})
-}
-
-func SuccessMsg(c *gin.Context, msg string) {
-	c.JSON(http.StatusOK, Response{
-		Code: 200,
-		Msg:  msg,
-	})
-}
-
-func Error(c *gin.Context, code int, msg string) {
-	c.JSON(http.StatusOK, Response{
-		Code: code,
-		Msg:  msg,
-	})
-}
-
-func BadRequest(c *gin.Context, msg string) {
-	Error(c, 400, msg)
-}
-
-func Unauthorized(c *gin.Context, msg string) {
-	Error(c, 401, msg)
-}
-
-func Forbidden(c *gin.Context, msg string) {
-	Error(c, 403, msg)
-}
-
-func NotFound(c *gin.Context, msg string) {
-	Error(c, 404, msg)
-}
-
-func TooManyRequests(c *gin.Context, msg string) {
-	Error(c, 429, msg)
-}
-
-func ServerError(c *gin.Context, msg string) {
-	Error(c, 500, msg)
 }

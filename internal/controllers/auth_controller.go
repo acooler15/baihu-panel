@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"fmt"
+	"net/http"
 	"strconv"
 	"sync"
 	"time"
@@ -63,7 +64,7 @@ func (ac *AuthController) Login(c *gin.Context) {
 	userAgent := c.GetHeader("User-Agent")
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.BadRequest(c, err.Error())
+		c.JSON(http.StatusBadRequest, utils.Response{Code: 400, Msg: err.Error()})
 		return
 	}
 
@@ -79,7 +80,7 @@ func (ac *AuthController) Login(c *gin.Context) {
 					"userAgent": userAgent,
 				},
 			})
-			utils.TooManyRequests(c, "尝试次数过多，请一分钟后再试")
+			c.JSON(http.StatusTooManyRequests, utils.Response{Code: 429, Msg: "尝试次数过多，请一分钟后再试"})
 			return
 		}
 		// 如果距离上次尝试已超过一分钟，重置计数
@@ -107,7 +108,7 @@ func (ac *AuthController) Login(c *gin.Context) {
 				"message":   "用户名或密码错误",
 			},
 		})
-		utils.Unauthorized(c, "用户名或密码错误")
+		c.JSON(http.StatusUnauthorized, utils.Response{Code: 401, Msg: "用户名或密码错误"})
 		return
 	}
 
@@ -119,12 +120,16 @@ func (ac *AuthController) Login(c *gin.Context) {
 		// 生成临时待验证 OTP 的 token，有效期 5 分钟
 		pendingToken, err := utils.GenerateOtpPendingToken(user.ID, constant.Secret)
 		if err != nil {
-			utils.ServerError(c, "生成临时凭证失败")
+			c.JSON(http.StatusInternalServerError, utils.Response{Code: 500, Msg: "生成临时凭证失败"})
 			return
 		}
-		utils.Success(c, gin.H{
-			"require_otp":       true,
-			"otp_pending_token": pendingToken,
+		c.JSON(http.StatusOK, utils.Response{
+			Code: 200,
+			Msg:  "success",
+			Data: gin.H{
+				"require_otp":       true,
+				"otp_pending_token": pendingToken,
+			},
 		})
 		return
 	}
@@ -149,7 +154,7 @@ func (ac *AuthController) Login(c *gin.Context) {
 				"message":   "Token生成失败",
 			},
 		})
-		utils.ServerError(c, "登录失败")
+		c.JSON(http.StatusInternalServerError, utils.Response{Code: 500, Msg: "登录失败"})
 		return
 	}
 
@@ -168,8 +173,12 @@ func (ac *AuthController) Login(c *gin.Context) {
 		},
 	})
 
-	utils.Success(c, gin.H{
-		"user": user.Username,
+	c.JSON(http.StatusOK, utils.Response{
+		Code: 200,
+		Msg:  "success",
+		Data: gin.H{
+			"user": user.Username,
+		},
 	})
 }
 
@@ -178,19 +187,23 @@ func (ac *AuthController) Logout(c *gin.Context) {
 		ac.userService.InvalidateUserTokens(userID.(string))
 	}
 	middleware.ClearAuthCookie(c)
-	utils.SuccessMsg(c, "退出成功")
+	c.JSON(http.StatusOK, utils.Response{Code: 200, Msg: "退出成功"})
 }
 
 func (ac *AuthController) GetCurrentUser(c *gin.Context) {
 	userID := c.GetString("userID")
 	user, err := ac.userService.GetUserByID(userID)
 	if err != nil {
-		utils.Unauthorized(c, "会话无效")
+		c.JSON(http.StatusUnauthorized, utils.Response{Code: 401, Msg: "会话无效"})
 		return
 	}
-	utils.Success(c, gin.H{
-		"username": user.Username,
-		"role":     user.Role,
+	c.JSON(http.StatusOK, utils.Response{
+		Code: 200,
+		Msg:  "success",
+		Data: gin.H{
+			"username": user.Username,
+			"role":     user.Role,
+		},
 	})
 }
 
@@ -203,15 +216,15 @@ func (ac *AuthController) Register(c *gin.Context) {
 		}
 
 		if err := c.ShouldBindJSON(&req); err != nil {
-			utils.BadRequest(c, err.Error())
+			c.JSON(http.StatusBadRequest, utils.Response{Code: 400, Msg: err.Error()})
 			return
 		}
 
 		// 安全性：强制设定角色为 user，防止注册时篡改角色为 admin
 		user := ac.userService.CreateUser(req.Username, req.Password, req.Email, constant.DefaultRole)
-		utils.Success(c, vo.ToUserVO(user))
+		c.JSON(http.StatusOK, utils.Response{Code: 200, Msg: "success", Data: vo.ToUserVO(user)})
 	*/
-	utils.BadRequest(c, "注册功能已关闭")
+	c.JSON(http.StatusBadRequest, utils.Response{Code: 400, Msg: "注册功能已关闭"})
 }
 
 func (ac *AuthController) VerifyOTP(c *gin.Context) {
@@ -220,30 +233,30 @@ func (ac *AuthController) VerifyOTP(c *gin.Context) {
 		Code            string `json:"code" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.BadRequest(c, err.Error())
+		c.JSON(http.StatusBadRequest, utils.Response{Code: 400, Msg: err.Error()})
 		return
 	}
 
 	userID, err := utils.ParseOtpPendingToken(req.OtpPendingToken, constant.Secret)
 	if err != nil {
-		utils.Unauthorized(c, "临时凭证无效或已过期")
+		c.JSON(http.StatusUnauthorized, utils.Response{Code: 401, Msg: "临时凭证无效或已过期"})
 		return
 	}
 
 	user, err := ac.userService.GetUserByID(userID)
 	if err != nil || user == nil {
-		utils.Unauthorized(c, "用户不存在")
+		c.JSON(http.StatusUnauthorized, utils.Response{Code: 401, Msg: "用户不存在"})
 		return
 	}
 
 	if !user.OtpEnabled || user.OtpSecret == "" {
-		utils.BadRequest(c, "未开启两步验证")
+		c.JSON(http.StatusBadRequest, utils.Response{Code: 400, Msg: "未开启两步验证"})
 		return
 	}
 
 	// 验证 OTP 验证码
 	if !totp.Validate(req.Code, user.OtpSecret) {
-		utils.Unauthorized(c, "验证码错误")
+		c.JSON(http.StatusUnauthorized, utils.Response{Code: 401, Msg: "验证码错误"})
 		return
 	}
 
@@ -257,7 +270,7 @@ func (ac *AuthController) VerifyOTP(c *gin.Context) {
 
 	token, err := utils.GenerateToken(user.ID, user.Username, user.TokenVersion, expireDays, constant.Secret)
 	if err != nil {
-		utils.ServerError(c, "登录失败")
+		c.JSON(http.StatusInternalServerError, utils.Response{Code: 500, Msg: "登录失败"})
 		return
 	}
 
@@ -277,8 +290,12 @@ func (ac *AuthController) VerifyOTP(c *gin.Context) {
 		},
 	})
 
-	utils.Success(c, gin.H{
-		"user": user.Username,
+	c.JSON(http.StatusOK, utils.Response{
+		Code: 200,
+		Msg:  "success",
+		Data: gin.H{
+			"user": user.Username,
+		},
 	})
 }
 
@@ -286,11 +303,15 @@ func (ac *AuthController) GetOTPStatus(c *gin.Context) {
 	userID := c.GetString("userID")
 	user, err := ac.userService.GetUserByID(userID)
 	if err != nil {
-		utils.Unauthorized(c, "用户不存在")
+		c.JSON(http.StatusUnauthorized, utils.Response{Code: 401, Msg: "用户不存在"})
 		return
 	}
-	utils.Success(c, gin.H{
-		"otp_enabled": user.OtpEnabled,
+	c.JSON(http.StatusOK, utils.Response{
+		Code: 200,
+		Msg:  "success",
+		Data: gin.H{
+			"otp_enabled": user.OtpEnabled,
+		},
 	})
 }
 
@@ -298,7 +319,7 @@ func (ac *AuthController) GenerateOTP(c *gin.Context) {
 	userID := c.GetString("userID")
 	user, err := ac.userService.GetUserByID(userID)
 	if err != nil {
-		utils.Unauthorized(c, "用户不存在")
+		c.JSON(http.StatusUnauthorized, utils.Response{Code: 401, Msg: "用户不存在"})
 		return
 	}
 
@@ -316,13 +337,17 @@ func (ac *AuthController) GenerateOTP(c *gin.Context) {
 		AccountName: accountName,
 	})
 	if err != nil {
-		utils.ServerError(c, "生成密钥失败")
+		c.JSON(http.StatusInternalServerError, utils.Response{Code: 500, Msg: "生成密钥失败"})
 		return
 	}
 
-	utils.Success(c, gin.H{
-		"secret": key.Secret(),
-		"url":    key.URL(),
+	c.JSON(http.StatusOK, utils.Response{
+		Code: 200,
+		Msg:  "success",
+		Data: gin.H{
+			"secret": key.Secret(),
+			"url":    key.URL(),
+		},
 	})
 }
 
@@ -333,23 +358,23 @@ func (ac *AuthController) EnableOTP(c *gin.Context) {
 		Code   string `json:"code" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.BadRequest(c, err.Error())
+		c.JSON(http.StatusBadRequest, utils.Response{Code: 400, Msg: err.Error()})
 		return
 	}
 
 	// 验证验证码是否与此 secret 匹配，防止错误绑定导致锁在外面
 	if !totp.Validate(req.Code, req.Secret) {
-		utils.BadRequest(c, "验证码校验失败")
+		c.JSON(http.StatusBadRequest, utils.Response{Code: 400, Msg: "验证码校验失败"})
 		return
 	}
 
 	// 绑定并保存
 	if err := ac.userService.UpdateOTP(userID, req.Secret, true); err != nil {
-		utils.ServerError(c, "开启两步验证失败")
+		c.JSON(http.StatusInternalServerError, utils.Response{Code: 500, Msg: "开启两步验证失败"})
 		return
 	}
 
-	utils.SuccessMsg(c, "开启两步验证成功")
+	c.JSON(http.StatusOK, utils.Response{Code: 200, Msg: "开启两步验证成功"})
 }
 
 func (ac *AuthController) DisableOTP(c *gin.Context) {
@@ -358,32 +383,32 @@ func (ac *AuthController) DisableOTP(c *gin.Context) {
 		Code string `json:"code" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.BadRequest(c, err.Error())
+		c.JSON(http.StatusBadRequest, utils.Response{Code: 400, Msg: err.Error()})
 		return
 	}
 
 	user, err := ac.userService.GetUserByID(userID)
 	if err != nil {
-		utils.Unauthorized(c, "用户不存在")
+		c.JSON(http.StatusUnauthorized, utils.Response{Code: 401, Msg: "用户不存在"})
 		return
 	}
 
 	if !user.OtpEnabled {
-		utils.BadRequest(c, "两步验证尚未开启")
+		c.JSON(http.StatusBadRequest, utils.Response{Code: 400, Msg: "两步验证尚未开启"})
 		return
 	}
 
 	// 验证验证码
 	if !totp.Validate(req.Code, user.OtpSecret) {
-		utils.BadRequest(c, "验证码错误")
+		c.JSON(http.StatusBadRequest, utils.Response{Code: 400, Msg: "验证码错误"})
 		return
 	}
 
 	// 禁用并清除 secret
 	if err := ac.userService.UpdateOTP(userID, "", false); err != nil {
-		utils.ServerError(c, "关闭两步验证失败")
+		c.JSON(http.StatusInternalServerError, utils.Response{Code: 500, Msg: "关闭两步验证失败"})
 		return
 	}
 
-	utils.SuccessMsg(c, "关闭两步验证成功")
+	c.JSON(http.StatusOK, utils.Response{Code: 200, Msg: "关闭两步验证成功"})
 }

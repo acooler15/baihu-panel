@@ -70,6 +70,7 @@ func (r *byteReader) Read(p []byte) (n int, err error) {
 	return n, nil
 }
 
+// HandleWebSocket 处理终端 WebSocket 连接
 func (tc *TerminalController) HandleWebSocket(c *gin.Context) {
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
@@ -157,7 +158,7 @@ func (tc *TerminalController) handlePtyMode(conn *websocket.Conn, userID string)
 					}
 				}
 				safe := chunk[:lastSafe]
-				
+
 				if len(safe) == 0 && len(chunk) >= 4 {
 					safe = chunk
 					remainder = nil
@@ -411,7 +412,7 @@ func (tc *TerminalController) handlePipeMode(conn *websocket.Conn, userID string
 					}
 				}
 				safe := chunk[:lastSafe]
-				
+
 				if len(safe) == 0 && len(chunk) >= 4 {
 					safe = chunk
 					remainder = nil
@@ -501,44 +502,6 @@ func (tc *TerminalController) handlePipeMode(conn *websocket.Conn, userID string
 	wg.Wait()
 }
 
-// ExecuteShellCommand 执行单个命令并返回结果
-func (tc *TerminalController) ExecuteShellCommand(c *gin.Context) {
-	// 演示模式下禁止执行命令
-	if constant.DemoMode {
-		utils.BadRequest(c, "演示模式下不能执行命令")
-		return
-	}
-
-	var req struct {
-		Command string `json:"command" binding:"required"`
-	}
-
-	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.BadRequest(c, err.Error())
-		return
-	}
-
-	cmd := utils.NewShellCommandCmd(req.Command)
-	userID := c.GetString("userID")
-	if userID == "" {
-		userID = "1" // 与 WebSocket 终端保持一致，保留原有兜底行为
-	}
-	cmd.Env = tc.buildTerminalEnv(userID)
-	output, err := cmd.CombinedOutput()
-
-	if err != nil {
-		utils.Success(c, gin.H{
-			"output": string(output),
-			"error":  err.Error(),
-		})
-		return
-	}
-
-	utils.Success(c, gin.H{
-		"output": string(output),
-	})
-}
-
 func (tc *TerminalController) buildTerminalEnv(userID string, extraEnvs ...string) []string {
 	env := os.Environ()
 	env = append(env, extraEnvs...)
@@ -573,16 +536,4 @@ func (tc *TerminalController) buildTerminalEnv(userID string, extraEnvs ...strin
 	}
 
 	return env
-}
-
-// GetCommands 获取所有可用的 cmd 列表及说明
-func (tc *TerminalController) GetCommands(c *gin.Context) {
-	var cmds []map[string]string
-	for _, cmdInfo := range constant.Commands {
-		cmds = append(cmds, map[string]string{
-			"name":        cmdInfo.Name,
-			"description": cmdInfo.Description,
-		})
-	}
-	utils.Success(c, cmds)
 }

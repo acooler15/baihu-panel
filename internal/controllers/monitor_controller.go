@@ -7,7 +7,6 @@ import (
 
 	"github.com/engigu/baihu-panel/internal/services"
 	"github.com/engigu/baihu-panel/internal/services/tasks"
-	"github.com/engigu/baihu-panel/internal/utils"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -27,12 +26,6 @@ var monitorUpgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		return true // 开发环境允许所有跨域，生产环境可根据配置限制
 	},
-}
-
-// GetSystemMonitor 获取系统和内存监控信息 (HTTP)
-func (mc *MonitorController) GetSystemMonitor(c *gin.Context) {
-	data := mc.getMonitorData()
-	utils.Success(c, data)
 }
 
 // MonitorSSE Server-Sent Events 获取系统监控数据

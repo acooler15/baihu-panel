@@ -1,11 +1,7 @@
 package controllers
 
 import (
-	"github.com/engigu/baihu-panel/internal/models/vo"
 	"github.com/engigu/baihu-panel/internal/services"
-	"github.com/engigu/baihu-panel/internal/utils"
-
-	"github.com/gin-gonic/gin"
 )
 
 type ScriptController struct {
@@ -14,94 +10,4 @@ type ScriptController struct {
 
 func NewScriptController(scriptService *services.ScriptService) *ScriptController {
 	return &ScriptController{scriptService: scriptService}
-}
-
-// CreateScript 创建脚本
-func (sc *ScriptController) CreateScript(c *gin.Context) {
-	userID := c.GetString("userID")
-
-	var req struct {
-		Name    string `json:"name" binding:"required"`
-		Content string `json:"content" binding:"required"`
-	}
-
-	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.BadRequest(c, err.Error())
-		return
-	}
-
-	script := sc.scriptService.CreateScript(req.Name, req.Content, userID)
-	utils.Success(c, vo.ToScriptVO(script))
-}
-
-// GetScripts 获取脚本列表
-func (sc *ScriptController) GetScripts(c *gin.Context) {
-	userID := c.GetString("userID")
-	scripts := sc.scriptService.GetScriptsByUserID(userID)
-	vos := vo.ToScriptVOListFromModels(scripts)
-	for i := range vos {
-		vos[i].Content = "" // 列表不返回内容
-	}
-	utils.Success(c, vos)
-}
-
-// GetScript 获取脚本详情
-func (sc *ScriptController) GetScript(c *gin.Context) {
-	id := c.Param("id")
-	if id == "" {
-		utils.BadRequest(c, "无效的脚本ID")
-		return
-	}
-
-	script := sc.scriptService.GetScriptByID(id)
-	if script == nil {
-		utils.NotFound(c, "脚本不存在")
-		return
-	}
-
-	utils.Success(c, vo.ToScriptVO(script))
-}
-
-// UpdateScript 更新脚本
-func (sc *ScriptController) UpdateScript(c *gin.Context) {
-	id := c.Param("id")
-	if id == "" {
-		utils.BadRequest(c, "无效的脚本ID")
-		return
-	}
-
-	var req struct {
-		Name    string `json:"name"`
-		Content string `json:"content"`
-	}
-
-	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.BadRequest(c, err.Error())
-		return
-	}
-
-	script := sc.scriptService.UpdateScript(id, req.Name, req.Content)
-	if script == nil {
-		utils.NotFound(c, "脚本不存在")
-		return
-	}
-
-	utils.Success(c, vo.ToScriptVO(script))
-}
-
-// DeleteScript 删除脚本
-func (sc *ScriptController) DeleteScript(c *gin.Context) {
-	id := c.Param("id")
-	if id == "" {
-		utils.BadRequest(c, "无效的脚本ID")
-		return
-	}
-
-	success := sc.scriptService.DeleteScript(id)
-	if !success {
-		utils.NotFound(c, "脚本不存在")
-		return
-	}
-
-	utils.SuccessMsg(c, "删除成功")
 }

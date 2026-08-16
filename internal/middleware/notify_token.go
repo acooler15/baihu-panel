@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"net/http"
 	"strings"
 
 	"github.com/engigu/baihu-panel/internal/constant"
@@ -14,7 +15,7 @@ func NotifyTokenAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		token := c.GetHeader("notify-token")
 		if token == "" {
-			utils.Unauthorized(c, "缺少通知 Token")
+			c.JSON(http.StatusUnauthorized, utils.Response{Code: 401, Msg: "缺少通知 Token"})
 			c.Abort()
 			return
 		}
@@ -24,13 +25,13 @@ func NotifyTokenAuth() gin.HandlerFunc {
 		savedToken := settingsService.Get(constant.SectionNotify, constant.KeyNotifyToken)
 
 		if savedToken == "" {
-			utils.Unauthorized(c, "通知 Token 未配置")
+			c.JSON(http.StatusUnauthorized, utils.Response{Code: 401, Msg: "通知 Token 未配置"})
 			c.Abort()
 			return
 		}
 
 		if !strings.EqualFold(token, savedToken) {
-			utils.Unauthorized(c, "通知 Token 无效")
+			c.JSON(http.StatusUnauthorized, utils.Response{Code: 401, Msg: "通知 Token 无效"})
 			c.Abort()
 			return
 		}

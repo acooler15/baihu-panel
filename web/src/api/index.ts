@@ -103,15 +103,17 @@ export async function request<T>(url: string, options?: RequestInit): Promise<T>
 
   const json: ApiResponse<T> = await res.json()
 
-  // 过渡期：双判断兼容（HTTP 状态码 = 业务码 + 响应体 code 字段）
+  // 未登录或登录过期，跳转到登录页（登录页自身返回 401 时只抛错不跳转）
   if (res.status === 401 || json.code === 401) {
-    // 未登录或登录过期，跳转到登录页
-    window.location.href = BASE_URL + '/login'
+    if (!window.location.pathname.endsWith('/login')) {
+      window.location.href = BASE_URL + '/login'
+    }
     throw new Error(json.msg || '请先登录')
   }
 
-  if (!res.ok || json.code !== 200) {
-    throw new Error(json.msg || '请求失败')
+  // Huma 迁移接口与保留的 Gin 特殊接口，错误均返回真实 HTTP 状态码，统一用 res.ok 判断
+  if (!res.ok) {
+    throw new Error(json.msg || (json as any).detail || '请求失败')
   }
 
   return json.data
@@ -301,7 +303,7 @@ export const api = {
         window.location.href = BASE_URL + '/login'
         throw new Error('请先登录')
       }
-      if (!res.ok || json.code !== 200) throw new Error(json.msg || '恢复失败')
+      if (!res.ok) throw new Error(json.msg || '恢复失败')
     }
   },
   files: {
@@ -330,7 +332,7 @@ export const api = {
         window.location.href = BASE_URL + '/login'
         throw new Error('请先登录')
       }
-      if (!res.ok || json.code !== 200) throw new Error(json.msg || '上传失败')
+      if (!res.ok) throw new Error(json.msg || '上传失败')
     },
     uploadFiles: async (files: FileList, paths: string[], targetPath?: string) => {
       const formData = new FormData()
@@ -353,7 +355,7 @@ export const api = {
         window.location.href = BASE_URL + '/login'
         throw new Error('请先登录')
       }
-      if (!res.ok || json.code !== 200) throw new Error(json.msg || '上传失败')
+      if (!res.ok) throw new Error(json.msg || '上传失败')
     }
   },
   deps: {
@@ -472,7 +474,7 @@ export const api = {
         window.location.href = BASE_URL + '/login'
         throw new Error('请先登录')
       }
-      if (!res.ok || json.code !== 200) throw new Error(json.msg || '上传失败')
+      if (!res.ok) throw new Error(json.msg || '上传失败')
       return json.data
     },
     setActive: (name: string) => request<{ message: string }>('/webui/active', { method: 'PUT', body: JSON.stringify({ name }) }),

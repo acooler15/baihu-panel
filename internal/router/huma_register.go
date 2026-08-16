@@ -52,4 +52,7 @@ func initAPIV1HumaRoutes(c *Controllers) {
 	// 批次 20：Auth（登录/OTP 等特殊接口，保留 Gin 原生处理，无需迁移）
 	// 批次 21：文件管理
 	c.File.RegisterAPIFileRoutes(api)
+
+	// 阶段 4：为保留 Gin 原生的特殊接口（WS/SSE/文件流/代理等）手动补充 OpenAPI 描述
+	registerSpecialOperations(api)
 }

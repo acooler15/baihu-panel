@@ -29,7 +29,7 @@ func AuthRequired() gin.HandlerFunc {
 			}
 			// 如果有 Origin 且不匹配则拒绝（实际部署时应配置允许的 Origin）
 			if origin != "" && !utils.CheckWSOrigin(c.Request) {
-				utils.Forbidden(c, "CSRF 校验失败: 非法的请求来源")
+				c.JSON(http.StatusForbidden, utils.Response{Code: 403, Msg: "CSRF 校验失败: 非法的请求来源"})
 				c.Abort()
 				return
 			}
@@ -43,17 +43,17 @@ func AuthRequired() gin.HandlerFunc {
 				settingsSvc := services.NewSettingsService()
 				interconnectToken := settingsSvc.Get(constant.SectionSite, constant.KeyInterconnectToken)
 				parentToken := settingsSvc.Get(constant.SectionInterconnect, constant.KeyInterconnectParentToken)
-				
+
 				isMatched := false
 				h1 := sha256.Sum256([]byte(tokenStr))
-				
+
 				if interconnectToken != "" {
 					h2 := sha256.Sum256([]byte(interconnectToken))
 					if subtle.ConstantTimeCompare(h1[:], h2[:]) == 1 {
 						isMatched = true
 					}
 				}
-				
+
 				if !isMatched && parentToken != "" {
 					h2 := sha256.Sum256([]byte(parentToken))
 					if subtle.ConstantTimeCompare(h1[:], h2[:]) == 1 {
@@ -78,7 +78,7 @@ func AuthRequired() gin.HandlerFunc {
 
 		token, err := c.Cookie(constant.CookieName)
 		if err != nil || token == "" {
-			utils.Unauthorized(c, "请先登录")
+			c.JSON(http.StatusUnauthorized, utils.Response{Code: 401, Msg: "请先登录"})
 			c.Abort()
 			return
 		}
@@ -86,7 +86,7 @@ func AuthRequired() gin.HandlerFunc {
 		// 验证 token
 		userID, username, tokenVersion, err := utils.ParseToken(token, constant.Secret)
 		if err != nil {
-			utils.Unauthorized(c, "登录已过期，请重新登录")
+			c.JSON(http.StatusUnauthorized, utils.Response{Code: 401, Msg: "登录已过期，请重新登录"})
 			c.Abort()
 			return
 		}
@@ -95,7 +95,7 @@ func AuthRequired() gin.HandlerFunc {
 		var user models.User
 		res := database.DB.Where("username = ?", username).Limit(1).Find(&user)
 		if res.Error != nil || res.RowsAffected == 0 || user.ID != userID || user.TokenVersion != tokenVersion {
-			utils.Unauthorized(c, "会话失效，请重新登录")
+			c.JSON(http.StatusUnauthorized, utils.Response{Code: 401, Msg: "会话失效，请重新登录"})
 			ClearAuthCookie(c)
 			c.Abort()
 			return
@@ -114,7 +114,7 @@ func AdminRequired() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		role, exists := c.Get("role")
 		if !exists || role != constant.AdminRole {
-			utils.Forbidden(c, "需要管理员权限")
+			c.JSON(http.StatusForbidden, utils.Response{Code: 403, Msg: "需要管理员权限"})
 			c.Abort()
 			return
 		}
@@ -129,7 +129,7 @@ func OpenapiRequired() gin.HandlerFunc {
 		if checkOpenapiToken(c, settingsSvc) {
 			return
 		}
-		utils.Unauthorized(c, "无效的 OpenAPI 令牌")
+		c.JSON(http.StatusUnauthorized, utils.Response{Code: 401, Msg: "无效的 OpenAPI 令牌"})
 		c.Abort()
 	}
 }
@@ -199,7 +199,7 @@ func checkOpenapiToken(c *gin.Context, settingsSvc *services.SettingsService) bo
 	var adminUser models.User
 	res := database.DB.Where("role = ?", "admin").Limit(1).Find(&adminUser)
 	if res.Error != nil || res.RowsAffected == 0 {
-		utils.Unauthorized(c, "未找到管理员账户，OpenAPI Token 校验失败")
+		c.JSON(http.StatusUnauthorized, utils.Response{Code: 401, Msg: "未找到管理员账户，OpenAPI Token 校验失败"})
 		c.Abort()
 		return true
 	}
@@ -311,7 +311,7 @@ func LocalhostOnly() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ip := c.ClientIP()
 		if ip != "127.0.0.1" && ip != "::1" {
-			utils.BadRequest(c, "仅允许本地访问")
+			c.JSON(http.StatusBadRequest, utils.Response{Code: 400, Msg: "仅允许本地访问"})
 			c.Abort()
 			return
 		}
@@ -319,7 +319,7 @@ func LocalhostOnly() gin.HandlerFunc {
 		// 简单的内部通信认证
 		token := c.GetHeader("X-Internal-Token")
 		if token == "" || token != constant.Secret {
-			utils.Unauthorized(c, "无效的内部调用凭证")
+			c.JSON(http.StatusUnauthorized, utils.Response{Code: 401, Msg: "无效的内部调用凭证"})
 			c.Abort()
 			return
 		}

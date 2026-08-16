@@ -1,7 +1,7 @@
 package controllers
 
 import (
-	"strconv"
+	"net/http"
 
 	"github.com/engigu/baihu-panel/internal/models/vo"
 	"github.com/engigu/baihu-panel/internal/services/tasks"
@@ -22,7 +22,7 @@ func NewExecutorController(executorService *tasks.ExecutorService) *ExecutorCont
 func (ec *ExecutorController) ExecuteTask(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
-		utils.BadRequest(c, "无效的任务ID")
+		c.JSON(http.StatusBadRequest, utils.Response{Code: 400, Msg: "无效的任务ID"})
 		return
 	}
 
@@ -40,33 +40,5 @@ func (ec *ExecutorController) ExecuteTask(c *gin.Context) {
 	}
 
 	result := ec.executorService.ExecuteTask(id, extraEnvs)
-	utils.Success(c, vo.ToExecutionResultVO(result))
-}
-
-// ExecuteCommand 执行命令
-func (ec *ExecutorController) ExecuteCommand(c *gin.Context) {
-	var req struct {
-		Command string `json:"command" binding:"required"`
-	}
-
-	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.BadRequest(c, err.Error())
-		return
-	}
-
-	result := ec.executorService.ExecuteCommand(req.Command)
-	utils.Success(c, vo.ToExecutionResultVO(result))
-}
-
-// GetLastResults 获取最新执行结果
-func (ec *ExecutorController) GetLastResults(c *gin.Context) {
-	count := 10
-	if c.Query("count") != "" {
-		if parsedCount, err := strconv.Atoi(c.Query("count")); err == nil && parsedCount > 0 {
-			count = parsedCount
-		}
-	}
-
-	results := ec.executorService.GetLastResults(count)
-	utils.Success(c, vo.ToExecutionResultVOList(results))
+	c.JSON(http.StatusOK, utils.Response{Code: 200, Msg: "success", Data: vo.ToExecutionResultVO(result)})
 }

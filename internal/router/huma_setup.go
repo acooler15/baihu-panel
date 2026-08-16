@@ -38,6 +38,14 @@ func newHuma(engine *gin.Engine, prefix, title, version, desc string, middleware
 		},
 	}
 
+	// servers 配置：默认使用相对路径，使 OpenAPI 文档可跟随部署域名自动适配
+	config.Servers = []*huma.Server{
+		{
+			URL:         "/",
+			Description: "Baihu Panel API",
+		},
+	}
+
 	// 安装自定义错误 Transformer
 	config.Transformers = append(config.Transformers, utils.HumaTransformer)
 
