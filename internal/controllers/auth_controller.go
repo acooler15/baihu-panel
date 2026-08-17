@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -10,10 +11,11 @@ import (
 	"github.com/engigu/baihu-panel/internal/constant"
 	"github.com/engigu/baihu-panel/internal/eventbus"
 	"github.com/engigu/baihu-panel/internal/middleware"
+	"github.com/engigu/baihu-panel/internal/models/vo"
 	"github.com/engigu/baihu-panel/internal/services"
 	"github.com/engigu/baihu-panel/internal/utils"
 
-	"github.com/gin-gonic/gin"
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/pquerna/otp/totp"
 )
 
@@ -54,18 +56,309 @@ func NewAuthController(userService *services.UserService, settingsService *servi
 	}
 }
 
-func (ac *AuthController) Login(c *gin.Context) {
-	var req struct {
-		Username string `json:"username" binding:"required"`
-		Password string `json:"password" binding:"required"`
+
+
+// ===========================================================================
+// /api/v1 Auth 普通用户接口 —— Huma handler（阶段 6）
+// 鉴权由 newHuma 的 selector 为 /auth/me、/auth/otp/* 套用 AuthRequired。
+// ===========================================================================
+
+// AGGetCurrentUserOutput 获取当前用户信息
+type AGGetCurrentUserOutput struct {
+	Body utils.HumaResponse[vo.CurrentUserVO]
+}
+
+// AGGetCurrentUser 获取当前登录用户信息（普通用户可访问）
+func (ac *AuthController) AGGetCurrentUser(ctx context.Context, input *struct{}) (*AGGetCurrentUserOutput, error) {
+	userID := ""
+	if c := utils.GetGinContext(ctx); c != nil {
+		userID = c.GetString("userID")
+	}
+	user, err := ac.userService.GetUserByID(userID)
+	if err != nil || user == nil {
+		return nil, utils.HumaUnauthorized("会话无效")
+	}
+	return &AGGetCurrentUserOutput{
+		Body: utils.HumaResponse[vo.CurrentUserVO]{
+			Code: 200,
+			Msg:  "success",
+			Data: vo.CurrentUserVO{
+				Username: user.Username,
+				Role:     user.Role,
+			},
+		},
+	}, nil
+}
+
+// AGGetOTPStatusOutput 获取 OTP 状态
+type AGGetOTPStatusOutput struct {
+	Body utils.HumaResponse[vo.OTPStatusVO]
+}
+
+// AGGetOTPStatus 获取两步验证状态（普通用户可访问）
+func (ac *AuthController) AGGetOTPStatus(ctx context.Context, input *struct{}) (*AGGetOTPStatusOutput, error) {
+	userID := ""
+	if c := utils.GetGinContext(ctx); c != nil {
+		userID = c.GetString("userID")
+	}
+	user, err := ac.userService.GetUserByID(userID)
+	if err != nil || user == nil {
+		return nil, utils.HumaUnauthorized("用户不存在")
+	}
+	return &AGGetOTPStatusOutput{
+		Body: utils.HumaResponse[vo.OTPStatusVO]{
+			Code: 200,
+			Msg:  "success",
+			Data: vo.OTPStatusVO{
+				OTPEnabled: user.OtpEnabled,
+			},
+		},
+	}, nil
+}
+
+// AGGenerateOTPOutput 生成 OTP 密钥
+type AGGenerateOTPOutput struct {
+	Body utils.HumaResponse[vo.OTPGenerateVO]
+}
+
+// AGGenerateOTP 生成新的 TOTP 密钥与二维码内容（普通用户可访问）
+func (ac *AuthController) AGGenerateOTP(ctx context.Context, input *struct{}) (*AGGenerateOTPOutput, error) {
+	userID := ""
+	if c := utils.GetGinContext(ctx); c != nil {
+		userID = c.GetString("userID")
+	}
+	user, err := ac.userService.GetUserByID(userID)
+	if err != nil || user == nil {
+		return nil, utils.HumaUnauthorized("用户不存在")
 	}
 
-	ip := c.ClientIP()
-	userAgent := c.GetHeader("User-Agent")
+	// 从设置服务获取站点标题作为账号名称后缀，以便于区分多环境
+	siteTitle := ac.settingsService.Get(constant.SectionSite, constant.KeyTitle)
+	accountName := user.Username
+	if siteTitle != "" {
+		accountName = fmt.Sprintf("%s@%s", user.Username, siteTitle)
+	}
 
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, utils.Response{Code: 400, Msg: err.Error()})
-		return
+	// 固定 Issuer 为 "BaihuPanel" 以保留 Authenticator App 内置的 Logo 识别
+	key, err := totp.Generate(totp.GenerateOpts{
+		Issuer:      "BaihuPanel",
+		AccountName: accountName,
+	})
+	if err != nil {
+		return nil, utils.HumaServerError("生成密钥失败")
+	}
+
+	return &AGGenerateOTPOutput{
+		Body: utils.HumaResponse[vo.OTPGenerateVO]{
+			Code: 200,
+			Msg:  "success",
+			Data: vo.OTPGenerateVO{
+				Secret: key.Secret(),
+				URL:    key.URL(),
+			},
+		},
+	}, nil
+}
+
+// AGEnableOTPInput 开启 OTP 请求
+type AGEnableOTPInput struct {
+	Body struct {
+		Secret string `json:"secret" description:"TOTP 密钥（Base32）"`
+		Code   string `json:"code" description:"一次性验证码"`
+	}
+}
+
+// AGEnableOTPOutput 开启 OTP 结果
+type AGEnableOTPOutput struct {
+	Body utils.HumaResponse[any]
+}
+
+// AGEnableOTP 开启两步验证（普通用户可访问）
+func (ac *AuthController) AGEnableOTP(ctx context.Context, input *AGEnableOTPInput) (*AGEnableOTPOutput, error) {
+	req := input.Body
+	userID := ""
+	if c := utils.GetGinContext(ctx); c != nil {
+		userID = c.GetString("userID")
+	}
+
+	// 验证验证码是否与此 secret 匹配，防止错误绑定导致锁在外面
+	if !totp.Validate(req.Code, req.Secret) {
+		return nil, utils.HumaBadRequest("验证码校验失败")
+	}
+
+	// 绑定并保存
+	if err := ac.userService.UpdateOTP(userID, req.Secret, true); err != nil {
+		return nil, utils.HumaServerError("开启两步验证失败")
+	}
+
+	return &AGEnableOTPOutput{
+		Body: utils.HumaResponse[any]{
+			Code: 200,
+			Msg:  "开启两步验证成功",
+		},
+	}, nil
+}
+
+// AGDisableOTPInput 关闭 OTP 请求
+type AGDisableOTPInput struct {
+	Body struct {
+		Code string `json:"code" description:"一次性验证码"`
+	}
+}
+
+// AGDisableOTPOutput 关闭 OTP 结果
+type AGDisableOTPOutput struct {
+	Body utils.HumaResponse[any]
+}
+
+// AGDisableOTP 关闭两步验证（普通用户可访问）
+func (ac *AuthController) AGDisableOTP(ctx context.Context, input *AGDisableOTPInput) (*AGDisableOTPOutput, error) {
+	req := input.Body
+	userID := ""
+	if c := utils.GetGinContext(ctx); c != nil {
+		userID = c.GetString("userID")
+	}
+
+	user, err := ac.userService.GetUserByID(userID)
+	if err != nil || user == nil {
+		return nil, utils.HumaUnauthorized("用户不存在")
+	}
+
+	if !user.OtpEnabled {
+		return nil, utils.HumaBadRequest("两步验证尚未开启")
+	}
+
+	// 验证验证码
+	if !totp.Validate(req.Code, user.OtpSecret) {
+		return nil, utils.HumaBadRequest("验证码错误")
+	}
+
+	// 禁用并清除 secret
+	if err := ac.userService.UpdateOTP(userID, "", false); err != nil {
+		return nil, utils.HumaServerError("关闭两步验证失败")
+	}
+
+	return &AGDisableOTPOutput{
+		Body: utils.HumaResponse[any]{
+			Code: 200,
+			Msg:  "关闭两步验证成功",
+		},
+	}, nil
+}
+
+// RegisterAPIAuthRoutes 注册 /api/v1 Auth 普通用户接口 Huma 路由（阶段 6）。
+// 鉴权由 newHuma 的 selector 按路径套用 AuthRequired。
+func (ac *AuthController) RegisterAPIAuthRoutes(api huma.API) {
+	huma.Register(api, huma.Operation{
+		Method:      http.MethodGet,
+		Path:        "/auth/me",
+		OperationID: "apiGetCurrentUser",
+		Summary:     "获取当前用户",
+		Description: "获取当前登录用户的用户名与角色",
+		Tags:        []string{"认证"},
+		Security:    []map[string][]string{{"CookieAuth": {}}},
+	}, ac.AGGetCurrentUser)
+
+	huma.Register(api, huma.Operation{
+		Method:      http.MethodGet,
+		Path:        "/auth/otp/status",
+		OperationID: "apiGetOTPStatus",
+		Summary:     "获取两步验证状态",
+		Description: "获取当前用户是否已开启两步验证",
+		Tags:        []string{"认证"},
+		Security:    []map[string][]string{{"CookieAuth": {}}},
+	}, ac.AGGetOTPStatus)
+
+	huma.Register(api, huma.Operation{
+		Method:      http.MethodPost,
+		Path:        "/auth/otp/generate",
+		OperationID: "apiGenerateOTP",
+		Summary:     "生成两步验证密钥",
+		Description: "生成新的 TOTP 密钥与二维码内容",
+		Tags:        []string{"认证"},
+		Security:    []map[string][]string{{"CookieAuth": {}}},
+	}, ac.AGGenerateOTP)
+
+	huma.Register(api, huma.Operation{
+		Method:      http.MethodPost,
+		Path:        "/auth/otp/enable",
+		OperationID: "apiEnableOTP",
+		Summary:     "开启两步验证",
+		Description: "校验验证码后开启两步验证",
+		Tags:        []string{"认证"},
+		Security:    []map[string][]string{{"CookieAuth": {}}},
+	}, ac.AGEnableOTP)
+
+	huma.Register(api, huma.Operation{
+		Method:      http.MethodPost,
+		Path:        "/auth/otp/disable",
+		OperationID: "apiDisableOTP",
+		Summary:     "关闭两步验证",
+		Description: "校验验证码后关闭两步验证",
+		Tags:        []string{"认证"},
+		Security:    []map[string][]string{{"CookieAuth": {}}},
+	}, ac.AGDisableOTP)
+
+	// 公开接口（无需鉴权，selector 中按路径放行）
+	huma.Register(api, huma.Operation{
+		Method:      http.MethodPost,
+		Path:        "/auth/login",
+		OperationID: "apiLogin",
+		Summary:     "用户登录",
+		Description: "用户名密码登录。若开启了两步验证，返回 require_otp 与 otp_pending_token，需再调用 /auth/login/otp 完成登录。",
+		Tags:        []string{"认证"},
+	}, ac.LoginHuma)
+
+	huma.Register(api, huma.Operation{
+		Method:      http.MethodPost,
+		Path:        "/auth/login/otp",
+		OperationID: "apiLoginOTP",
+		Summary:     "两步验证登录",
+		Description: "使用临时凭证与一次性验证码完成两步验证登录。",
+		Tags:        []string{"认证"},
+	}, ac.VerifyOTPHuma)
+
+	huma.Register(api, huma.Operation{
+		Method:      http.MethodPost,
+		Path:        "/auth/logout",
+		OperationID: "apiLogout",
+		Summary:     "退出登录",
+		Description: "使当前会话失效并清除认证 Cookie。",
+		Tags:        []string{"认证"},
+	}, ac.LogoutHuma)
+}
+
+// ===========================================================================
+// 认证公开接口（Huma，迁移自 Gin 原生 Login/VerifyOTP/Logout）
+// ===========================================================================
+
+// LoginHumaInput 登录请求
+type LoginHumaInput struct {
+	Body struct {
+		Username string `json:"username" required:"true" description:"用户名"`
+		Password string `json:"password" required:"true" description:"密码"`
+	}
+}
+
+// LoginHumaOutput 登录结果
+type LoginHumaOutput struct {
+	Body utils.HumaResponse[struct {
+		User            string `json:"user,omitempty"`
+		RequireOTP      bool   `json:"require_otp,omitempty"`
+		OtpPendingToken string `json:"otp_pending_token,omitempty"`
+	}]
+}
+
+// LoginHuma 用户名密码登录（公开接口）
+func (ac *AuthController) LoginHuma(ctx context.Context, input *LoginHumaInput) (*LoginHumaOutput, error) {
+	req := input.Body
+	gc := utils.GetGinContext(ctx)
+
+	ip := ""
+	userAgent := ""
+	if gc != nil {
+		ip = gc.ClientIP()
+		userAgent = gc.GetHeader("User-Agent")
 	}
 
 	// 暴力破解防御
@@ -80,8 +373,7 @@ func (ac *AuthController) Login(c *gin.Context) {
 					"userAgent": userAgent,
 				},
 			})
-			c.JSON(http.StatusTooManyRequests, utils.Response{Code: 429, Msg: "尝试次数过多，请一分钟后再试"})
-			return
+			return nil, utils.HumaTooManyRequests("尝试次数过多，请一分钟后再试")
 		}
 		// 如果距离上次尝试已超过一分钟，重置计数
 		if time.Since(attempt.LastAttempt) >= time.Minute {
@@ -108,8 +400,7 @@ func (ac *AuthController) Login(c *gin.Context) {
 				"message":   "用户名或密码错误",
 			},
 		})
-		c.JSON(http.StatusUnauthorized, utils.Response{Code: 401, Msg: "用户名或密码错误"})
-		return
+		return nil, utils.HumaUnauthorized("用户名或密码错误")
 	}
 
 	// 登录成功，清除尝试记录
@@ -120,18 +411,26 @@ func (ac *AuthController) Login(c *gin.Context) {
 		// 生成临时待验证 OTP 的 token，有效期 5 分钟
 		pendingToken, err := utils.GenerateOtpPendingToken(user.ID, constant.Secret)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, utils.Response{Code: 500, Msg: "生成临时凭证失败"})
-			return
+			return nil, utils.HumaServerError("生成临时凭证失败")
 		}
-		c.JSON(http.StatusOK, utils.Response{
-			Code: 200,
-			Msg:  "success",
-			Data: gin.H{
-				"require_otp":       true,
-				"otp_pending_token": pendingToken,
+		return &LoginHumaOutput{
+			Body: utils.HumaResponse[struct {
+				User            string `json:"user,omitempty"`
+				RequireOTP      bool   `json:"require_otp,omitempty"`
+				OtpPendingToken string `json:"otp_pending_token,omitempty"`
+			}]{
+				Code: 200,
+				Msg:  "success",
+				Data: struct {
+					User            string `json:"user,omitempty"`
+					RequireOTP      bool   `json:"require_otp,omitempty"`
+					OtpPendingToken string `json:"otp_pending_token,omitempty"`
+				}{
+					RequireOTP:      true,
+					OtpPendingToken: pendingToken,
+				},
 			},
-		})
-		return
+		}, nil
 	}
 
 	expireDays := 7
@@ -154,12 +453,13 @@ func (ac *AuthController) Login(c *gin.Context) {
 				"message":   "Token生成失败",
 			},
 		})
-		c.JSON(http.StatusInternalServerError, utils.Response{Code: 500, Msg: "登录失败"})
-		return
+		return nil, utils.HumaServerError("登录失败")
 	}
 
 	// 设置 Cookie
-	middleware.SetAuthCookie(c, token, expireDays)
+	if gc != nil {
+		middleware.SetAuthCookie(gc, token, expireDays)
+	}
 
 	// 记录登录成功日志
 	eventbus.DefaultBus.Publish(eventbus.Event{
@@ -173,91 +473,62 @@ func (ac *AuthController) Login(c *gin.Context) {
 		},
 	})
 
-	c.JSON(http.StatusOK, utils.Response{
-		Code: 200,
-		Msg:  "success",
-		Data: gin.H{
-			"user": user.Username,
+	return &LoginHumaOutput{
+		Body: utils.HumaResponse[struct {
+			User            string `json:"user,omitempty"`
+			RequireOTP      bool   `json:"require_otp,omitempty"`
+			OtpPendingToken string `json:"otp_pending_token,omitempty"`
+		}]{
+			Code: 200,
+			Msg:  "success",
+			Data: struct {
+				User            string `json:"user,omitempty"`
+				RequireOTP      bool   `json:"require_otp,omitempty"`
+				OtpPendingToken string `json:"otp_pending_token,omitempty"`
+			}{
+				User: user.Username,
+			},
 		},
-	})
+	}, nil
 }
 
-func (ac *AuthController) Logout(c *gin.Context) {
-	if userID, exists := c.Get("userID"); exists {
-		ac.userService.InvalidateUserTokens(userID.(string))
+// VerifyOTPHumaInput 两步验证登录请求
+type VerifyOTPHumaInput struct {
+	Body struct {
+		OtpPendingToken string `json:"otp_pending_token" required:"true" description:"临时凭证"`
+		Code            string `json:"code" required:"true" description:"一次性验证码"`
 	}
-	middleware.ClearAuthCookie(c)
-	c.JSON(http.StatusOK, utils.Response{Code: 200, Msg: "退出成功"})
 }
 
-func (ac *AuthController) GetCurrentUser(c *gin.Context) {
-	userID := c.GetString("userID")
-	user, err := ac.userService.GetUserByID(userID)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, utils.Response{Code: 401, Msg: "会话无效"})
-		return
-	}
-	c.JSON(http.StatusOK, utils.Response{
-		Code: 200,
-		Msg:  "success",
-		Data: gin.H{
-			"username": user.Username,
-			"role":     user.Role,
-		},
-	})
+// VerifyOTPHumaOutput 两步验证登录结果
+type VerifyOTPHumaOutput struct {
+	Body utils.HumaResponse[struct {
+		User string `json:"user,omitempty"`
+	}]
 }
 
-func (ac *AuthController) Register(c *gin.Context) {
-	/*
-		var req struct {
-			Username string `json:"username" binding:"required"`
-			Email    string `json:"email" binding:"required"`
-			Password string `json:"password" binding:"required"`
-		}
-
-		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, utils.Response{Code: 400, Msg: err.Error()})
-			return
-		}
-
-		// 安全性：强制设定角色为 user，防止注册时篡改角色为 admin
-		user := ac.userService.CreateUser(req.Username, req.Password, req.Email, constant.DefaultRole)
-		c.JSON(http.StatusOK, utils.Response{Code: 200, Msg: "success", Data: vo.ToUserVO(user)})
-	*/
-	c.JSON(http.StatusBadRequest, utils.Response{Code: 400, Msg: "注册功能已关闭"})
-}
-
-func (ac *AuthController) VerifyOTP(c *gin.Context) {
-	var req struct {
-		OtpPendingToken string `json:"otp_pending_token" binding:"required"`
-		Code            string `json:"code" binding:"required"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, utils.Response{Code: 400, Msg: err.Error()})
-		return
-	}
+// VerifyOTPHuma 两步验证登录（公开接口）
+func (ac *AuthController) VerifyOTPHuma(ctx context.Context, input *VerifyOTPHumaInput) (*VerifyOTPHumaOutput, error) {
+	req := input.Body
+	gc := utils.GetGinContext(ctx)
 
 	userID, err := utils.ParseOtpPendingToken(req.OtpPendingToken, constant.Secret)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, utils.Response{Code: 401, Msg: "临时凭证无效或已过期"})
-		return
+		return nil, utils.HumaUnauthorized("临时凭证无效或已过期")
 	}
 
 	user, err := ac.userService.GetUserByID(userID)
 	if err != nil || user == nil {
-		c.JSON(http.StatusUnauthorized, utils.Response{Code: 401, Msg: "用户不存在"})
-		return
+		return nil, utils.HumaUnauthorized("用户不存在")
 	}
 
 	if !user.OtpEnabled || user.OtpSecret == "" {
-		c.JSON(http.StatusBadRequest, utils.Response{Code: 400, Msg: "未开启两步验证"})
-		return
+		return nil, utils.HumaBadRequest("未开启两步验证")
 	}
 
 	// 验证 OTP 验证码
 	if !totp.Validate(req.Code, user.OtpSecret) {
-		c.JSON(http.StatusUnauthorized, utils.Response{Code: 401, Msg: "验证码错误"})
-		return
+		return nil, utils.HumaUnauthorized("验证码错误")
 	}
 
 	// 校验通过，生成正式 Token 并登录
@@ -270,15 +541,20 @@ func (ac *AuthController) VerifyOTP(c *gin.Context) {
 
 	token, err := utils.GenerateToken(user.ID, user.Username, user.TokenVersion, expireDays, constant.Secret)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, utils.Response{Code: 500, Msg: "登录失败"})
-		return
+		return nil, utils.HumaServerError("登录失败")
 	}
 
-	middleware.SetAuthCookie(c, token, expireDays)
+	if gc != nil {
+		middleware.SetAuthCookie(gc, token, expireDays)
+	}
 
 	// 记录登录成功日志
-	ip := c.ClientIP()
-	userAgent := c.GetHeader("User-Agent")
+	ip := ""
+	userAgent := ""
+	if gc != nil {
+		ip = gc.ClientIP()
+		userAgent = gc.GetHeader("User-Agent")
+	}
 	eventbus.DefaultBus.Publish(eventbus.Event{
 		Type: constant.EventUserLogin,
 		Payload: map[string]interface{}{
@@ -290,125 +566,39 @@ func (ac *AuthController) VerifyOTP(c *gin.Context) {
 		},
 	})
 
-	c.JSON(http.StatusOK, utils.Response{
-		Code: 200,
-		Msg:  "success",
-		Data: gin.H{
-			"user": user.Username,
+	return &VerifyOTPHumaOutput{
+		Body: utils.HumaResponse[struct {
+			User string `json:"user,omitempty"`
+		}]{
+			Code: 200,
+			Msg:  "success",
+			Data: struct {
+				User string `json:"user,omitempty"`
+			}{
+				User: user.Username,
+			},
 		},
-	})
+	}, nil
 }
 
-func (ac *AuthController) GetOTPStatus(c *gin.Context) {
-	userID := c.GetString("userID")
-	user, err := ac.userService.GetUserByID(userID)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, utils.Response{Code: 401, Msg: "用户不存在"})
-		return
+// LogoutHumaOutput 退出登录结果
+type LogoutHumaOutput struct {
+	Body utils.HumaResponse[any]
+}
+
+// LogoutHuma 退出登录（公开接口）
+func (ac *AuthController) LogoutHuma(ctx context.Context, input *struct{}) (*LogoutHumaOutput, error) {
+	gc := utils.GetGinContext(ctx)
+	if gc != nil {
+		if userID, exists := gc.Get("userID"); exists {
+			ac.userService.InvalidateUserTokens(userID.(string))
+		}
+		middleware.ClearAuthCookie(gc)
 	}
-	c.JSON(http.StatusOK, utils.Response{
-		Code: 200,
-		Msg:  "success",
-		Data: gin.H{
-			"otp_enabled": user.OtpEnabled,
+	return &LogoutHumaOutput{
+		Body: utils.HumaResponse[any]{
+			Code: 200,
+			Msg:  "退出成功",
 		},
-	})
-}
-
-func (ac *AuthController) GenerateOTP(c *gin.Context) {
-	userID := c.GetString("userID")
-	user, err := ac.userService.GetUserByID(userID)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, utils.Response{Code: 401, Msg: "用户不存在"})
-		return
-	}
-
-	// 从设置服务获取站点标题作为 App 中显示的 Issuer
-	// 从设置服务获取站点标题作为账号名称后缀，以便于区分多环境
-	siteTitle := ac.settingsService.Get(constant.SectionSite, constant.KeyTitle)
-	accountName := user.Username
-	if siteTitle != "" {
-		accountName = fmt.Sprintf("%s@%s", user.Username, siteTitle)
-	}
-
-	// 生成新的 TOTP 密钥。固定 Issuer 为 "BaihuPanel" 以保留 Authenticator App 内置的 Logo 识别
-	key, err := totp.Generate(totp.GenerateOpts{
-		Issuer:      "BaihuPanel",
-		AccountName: accountName,
-	})
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, utils.Response{Code: 500, Msg: "生成密钥失败"})
-		return
-	}
-
-	c.JSON(http.StatusOK, utils.Response{
-		Code: 200,
-		Msg:  "success",
-		Data: gin.H{
-			"secret": key.Secret(),
-			"url":    key.URL(),
-		},
-	})
-}
-
-func (ac *AuthController) EnableOTP(c *gin.Context) {
-	userID := c.GetString("userID")
-	var req struct {
-		Secret string `json:"secret" binding:"required"`
-		Code   string `json:"code" binding:"required"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, utils.Response{Code: 400, Msg: err.Error()})
-		return
-	}
-
-	// 验证验证码是否与此 secret 匹配，防止错误绑定导致锁在外面
-	if !totp.Validate(req.Code, req.Secret) {
-		c.JSON(http.StatusBadRequest, utils.Response{Code: 400, Msg: "验证码校验失败"})
-		return
-	}
-
-	// 绑定并保存
-	if err := ac.userService.UpdateOTP(userID, req.Secret, true); err != nil {
-		c.JSON(http.StatusInternalServerError, utils.Response{Code: 500, Msg: "开启两步验证失败"})
-		return
-	}
-
-	c.JSON(http.StatusOK, utils.Response{Code: 200, Msg: "开启两步验证成功"})
-}
-
-func (ac *AuthController) DisableOTP(c *gin.Context) {
-	userID := c.GetString("userID")
-	var req struct {
-		Code string `json:"code" binding:"required"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, utils.Response{Code: 400, Msg: err.Error()})
-		return
-	}
-
-	user, err := ac.userService.GetUserByID(userID)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, utils.Response{Code: 401, Msg: "用户不存在"})
-		return
-	}
-
-	if !user.OtpEnabled {
-		c.JSON(http.StatusBadRequest, utils.Response{Code: 400, Msg: "两步验证尚未开启"})
-		return
-	}
-
-	// 验证验证码
-	if !totp.Validate(req.Code, user.OtpSecret) {
-		c.JSON(http.StatusBadRequest, utils.Response{Code: 400, Msg: "验证码错误"})
-		return
-	}
-
-	// 禁用并清除 secret
-	if err := ac.userService.UpdateOTP(userID, "", false); err != nil {
-		c.JSON(http.StatusInternalServerError, utils.Response{Code: 500, Msg: "关闭两步验证失败"})
-		return
-	}
-
-	c.JSON(http.StatusOK, utils.Response{Code: 200, Msg: "关闭两步验证成功"})
+	}, nil
 }

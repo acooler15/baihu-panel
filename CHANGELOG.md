@@ -2,6 +2,14 @@
 
 ### 2026.08.17 - 通知内容统一与 Options SDK 支持、SSE 实时流状态帧协议、日志全屏删除修复与 Go 1.26 升级
 
+### 2026.08.16 - Gin → Huma 迁移收尾（阶段 10：清理与文档收尾）
+
+**♻️ 清理与文档收尾**
+* **删除死代码 (Clean)**：移除了 `internal/middleware/auth.go` 中已无引用的 `SwaggerAuth` 中间件（Basic Auth 旧实现）。
+* **清理残留 tag (Clean)**：移除了 `internal/models/vo/task_vo.go` 中 `TaskCreateReq` / `TaskUpdateReq` 遗留的 `swaggertype:"string"` tag（swag 已移除，Huma 不识别）。
+* **修复上传接口文档生成 (Fix)**：将 `/files/upload`、`/files/uploadfiles`、`/settings/restore`、`/webui/upload` 四个文件上传接口的 Input 由 `*huma.FormFile` 改为 Huma 标准 `huma.MultipartFormFiles[T]` 用法，解决 `make openapi` 导出时 `pointers are not supported for form/header/path/query parameters` panic。
+* **OpenAPI 文档验证 (Docs)**：`make openapi` 正常导出，`api-openapi.json` 覆盖全部迁移接口（122 paths），`open2api-openapi.json` 保持 14 paths 不变。
+
 ### 2026.08.16 - Gin → Huma 迁移收尾（阶段 4：清理与优化）
 
 **♻️ 清理与优化**

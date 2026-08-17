@@ -49,10 +49,20 @@ func initAPIV1HumaRoutes(c *Controllers) {
 	// 批次 18：SystemWS（WebSocket 特殊接口，保留 Gin 原生处理，无需迁移）
 	// 批次 19：WebUI 管理
 	c.WebUI.RegisterAPIWebUIRoutes(api)
-	// 批次 20：Auth（登录/OTP 等特殊接口，保留 Gin 原生处理，无需迁移）
+	// 批次 20：Auth（阶段 6：迁移 /auth/me、/auth/otp/* 普通用户接口）
+	// 登录/登出等公开接口仍保留 Gin 原生处理
+	c.Auth.RegisterAPIAuthRoutes(api)
 	// 批次 21：文件管理
 	c.File.RegisterAPIFileRoutes(api)
 
-	// 阶段 4：为保留 Gin 原生的特殊接口（WS/SSE/文件流/代理等）手动补充 OpenAPI 描述
+	// 阶段 7：日志 SSE（实时日志流）
+	c.LogSSE.RegisterAPILogSSERoutes(api)
+
+	// Agent 外部接口（挂载于 /api/agent，供远程 Agent 调用）
+	if c.AgentHuma != nil {
+		c.Agent.RegisterAPIAgentExternalRoutes(c.AgentHuma)
+	}
+
+	// 阶段 4：为保留 Gin 原生的特殊接口（WS/文件流/代理等）手动补充 OpenAPI 描述
 	registerSpecialOperations(api)
 }

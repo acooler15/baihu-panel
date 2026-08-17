@@ -2,8 +2,10 @@ package controllers
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,9 +17,10 @@ import (
 	"github.com/engigu/baihu-panel/internal/services"
 	"github.com/engigu/baihu-panel/internal/utils"
 	"github.com/engigu/baihu-panel/internal/windows"
+	"github.com/gin-gonic/gin"
 
 	"github.com/creack/pty"
-	"github.com/gin-gonic/gin"
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/gorilla/websocket"
 	"golang.org/x/text/encoding/simplifiedchinese"
 	"golang.org/x/text/transform"
@@ -69,6 +72,10 @@ func (r *byteReader) Read(p []byte) (n int, err error) {
 	r.pos += n
 	return n, nil
 }
+
+// ===========================================================================
+// 终端 WebSocket handler（由 api_routes.go 保留引用）
+// ===========================================================================
 
 // HandleWebSocket 处理终端 WebSocket 连接
 func (tc *TerminalController) HandleWebSocket(c *gin.Context) {
@@ -536,4 +543,103 @@ func (tc *TerminalController) buildTerminalEnv(userID string, extraEnvs ...strin
 	}
 
 	return env
+}
+
+// ===========================================================================
+// 终端命令业务方法（Huma）
+// ===========================================================================
+
+// TermGetCommandsOutput 获取所有可用命令
+type TermGetCommandsOutput struct {
+	Body utils.HumaResponse[[]map[string]string]
+}
+
+// TermGetCommands 获取所有可用的 cmd 列表及说明
+func (tc *TerminalController) TermGetCommands(ctx context.Context, input *struct{}) (*TermGetCommandsOutput, error) {
+	var cmds []map[string]string
+	for _, cmdInfo := range constant.Commands {
+		cmds = append(cmds, map[string]string{
+			"name":        cmdInfo.Name,
+			"description": cmdInfo.Description,
+		})
+	}
+
+	return &TermGetCommandsOutput{
+		Body: utils.HumaResponse[[]map[string]string]{
+			Code: 200,
+			Msg:  "success",
+			Data: cmds,
+		},
+	}, nil
+}
+
+// TermExecuteCommandInput 执行单个命令
+type TermExecuteCommandInput struct {
+	Body struct {
+		Command string `json:"command" description:"要执行的命令"`
+	}
+}
+
+// TermExecuteCommandOutput 执行单个命令
+type TermExecuteCommandOutput struct {
+	Body utils.HumaResponse[struct {
+		Output string `json:"output"`
+		Error  string `json:"error,omitempty"`
+	}]
+}
+
+// TermExecuteCommand 执行单个命令并返回结果
+func (tc *TerminalController) TermExecuteCommand(ctx context.Context, input *TermExecuteCommandInput) (*TermExecuteCommandOutput, error) {
+	if constant.DemoMode {
+		return nil, utils.HumaBadRequest("演示模式下不能执行命令")
+	}
+
+	if input.Body.Command == "" {
+		return nil, utils.HumaBadRequest("命令不能为空")
+	}
+
+	cmd := utils.NewShellCommandCmd(input.Body.Command)
+	userID := ""
+	if c := utils.GetGinContext(ctx); c != nil {
+		userID = c.GetString("userID")
+	}
+	if userID == "" {
+		userID = "1" // 与 WebSocket 终端保持一致，保留原有兜底行为
+	}
+	cmd.Env = tc.buildTerminalEnv(userID)
+	output, err := cmd.CombinedOutput()
+
+	data := struct {
+		Output string `json:"output"`
+		Error  string `json:"error,omitempty"`
+	}{
+		Output: string(output),
+	}
+	if err != nil {
+		data.Error = err.Error()
+	}
+
+	return &TermExecuteCommandOutput{
+		Body: utils.HumaResponse[struct {
+			Output string `json:"output"`
+			Error  string `json:"error,omitempty"`
+		}]{
+			Code: 200,
+			Msg:  "success",
+			Data: data,
+		},
+	}, nil
+}
+
+// ===========================================================================
+// 路由注册
+// ===========================================================================
+
+// RegisterAPITerminalRoutes 注册 /api/v1 终端 Huma 路由
+func (tc *TerminalController) RegisterAPITerminalRoutes(api huma.API) {
+	security := []map[string][]string{{"CookieAuth": {}}}
+	tag := []string{"终端"}
+
+	huma.Register(api, huma.Operation{Method: http.MethodGet, Path: "/terminal/cmds", OperationID: "TermGetCommands", Summary: "获取所有可用命令", Description: "获取终端中可用的内置命令列表及说明", Tags: tag, Security: security}, tc.TermGetCommands)
+	huma.Register(api, huma.Operation{Method: http.MethodPost, Path: "/terminal/execute", OperationID: "TermExecuteCommand", Summary: "执行单个命令", Description: "在服务器上执行一条命令并返回结果", Tags: tag, Security: security}, tc.TermExecuteCommand)
 }

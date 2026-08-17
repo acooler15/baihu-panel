@@ -15,7 +15,7 @@ type TaskCreateReq struct {
 	PostCommand   string               `json:"post_command" example:"echo 'post'" description:"执行后命令"`
 	Tags          string               `json:"tags" example:"test,dev" description:"标签"`
 	Type          string               `json:"type" example:"repo" description:"任务类型，common 或 repo"`
-	Config        string               `json:"config" swaggertype:"string" example:"{\"source_url\":\"https://github.com/abc/repo\",\"branch\":\"main\"}" description:"仓库任务配置"`
+	Config        string               `json:"config" example:"{\"source_url\":\"https://github.com/abc/repo\",\"branch\":\"main\"}" description:"仓库任务配置"`
 	Schedule      string               `json:"schedule" example:"0 0 * * *" description:"cron 表达式"`
 	Timeout       int                  `json:"timeout" example:"3600" description:"超时时间(秒)"`
 	WorkDir       string               `json:"work_dir" example:"/tmp" description:"工作目录"`
@@ -39,7 +39,7 @@ type TaskUpdateReq struct {
 	PostCommand   string               `json:"post_command" example:"echo 'post'" description:"执行后命令"`
 	Tags          string               `json:"tags" example:"test,dev" description:"标签"`
 	Type          string               `json:"type" example:"repo" description:"任务类型，common 或 repo"`
-	Config        string               `json:"config" swaggertype:"string" example:"{\"source_url\":\"https://github.com/abc/repo\",\"branch\":\"main\"}" description:"仓库任务配置"`
+	Config        string               `json:"config" example:"{\"source_url\":\"https://github.com/abc/repo\",\"branch\":\"main\"}" description:"仓库任务配置"`
 	Schedule      string               `json:"schedule" example:"0 0 * * *" description:"cron 表达式"`
 	Timeout       int                  `json:"timeout" example:"3600" description:"超时时间(秒)"`
 	WorkDir       string               `json:"work_dir" example:"/tmp" description:"工作目录"`

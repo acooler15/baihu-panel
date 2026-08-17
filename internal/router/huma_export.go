@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/engigu/baihu-panel/internal/constant"
@@ -26,17 +27,32 @@ func ExportOpenAPI(outDir string) error {
 	engine := gin.New()
 
 	// /api/v1 管理接口（Cookie 鉴权）
+	// 与 router.Setup 中的 APIV1Huma 保持一致，通过 selector 按 Operation 选择中间件
 	apiHuma := newHuma(engine, "/api/v1", "Baihu Panel API", constant.Version,
 		"内部管理 API。需通过登录后的 Cookie 会话进行鉴权。",
-		middleware.AuthRequired(), middleware.AdminRequired())
+		func(op huma.Operation) []gin.HandlerFunc {
+			p := op.Path
+			switch {
+			case p == "/auth/me", strings.HasPrefix(p, "/auth/otp/"):
+				return []gin.HandlerFunc{middleware.AuthRequired()}
+			case p == "/notify/send":
+				return []gin.HandlerFunc{middleware.NotifyTokenAuth()}
+			default:
+				return []gin.HandlerFunc{middleware.AuthRequired(), middleware.AdminRequired()}
+			}
+		})
 
 	// /open2api/v1 开放接口（Bearer Token 鉴权）
 	open2apiHuma := newHuma(engine, "/open2api/v1", "Baihu Panel OpenAPI", constant.Version,
-		"对外开放 API。需通过 Bearer Token 进行鉴权。", middleware.OpenapiRequired())
+		"对外开放 API。需通过 Bearer Token 进行鉴权。",
+		func(op huma.Operation) []gin.HandlerFunc {
+			return []gin.HandlerFunc{middleware.OpenapiRequired()}
+		})
 
 	c := &Controllers{
 		APIV1Huma:      apiHuma,
 		Open2APIV1Huma: open2apiHuma,
+		Auth:           &controllers.AuthController{},
 		Task:           &controllers.TaskController{},
 		Env:            &controllers.EnvController{},
 		Script:         &controllers.ScriptController{},

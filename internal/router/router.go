@@ -42,6 +42,8 @@ type Controllers struct {
 	// APIV1Huma 挂载于 /api/v1，Open2APIV1Huma 挂载于 /open2api/v1
 	APIV1Huma      huma.API
 	Open2APIV1Huma huma.API
+	// AgentHuma 挂载于 /api 前缀（供远程 Agent 调用）
+	AgentHuma huma.API
 }
 
 func Setup(c *Controllers) *gin.Engine {
@@ -83,17 +85,53 @@ func Setup(c *Controllers) *gin.Engine {
 	initAuthorizedAPIRoutes(apiV1, c) // 授权接口 (需 JWT)
 
 	// 3.1 Huma 实例（双文档方案）：挂载于 /api/v1
-	// 阶段 2 迁移的管理接口均为管理员权限接口，统一套用 AuthRequired + AdminRequired 鉴权。
-	// 公开接口（/auth/login 等）与特殊接口（WS/SSE/文件流）继续由 Gin 原生处理。
+	// 阶段 2 迁移的管理接口均为管理员权限接口，统一套用 AuthRequired + AdminRequired 鉴权；
+	// 阶段 5 起，APIV1Huma 通过 selector 按 Operation 路径选择鉴权中间件：
+	//   - /auth/me、/auth/otp/*        → AuthRequired（普通用户）
+	//   - /notify/send                 → NotifyTokenAuth（独立鉴权）
+	//   - 其余管理接口 / 文件流 / 代理   → AuthRequired + AdminRequired
+	// 公开接口（/auth/login 等）与 WebSocket 接口继续由 Gin 原生处理。
 	// API 版本号与编译产物版本号保持一致（由 Makefile LDFLAGS 注入，默认 "dev"）
 	c.APIV1Huma = newHuma(router, "/api/v1", "Baihu Panel API", constant.Version,
 		"内部管理 API。需通过登录后的 Cookie 会话进行鉴权。",
-		middleware.AuthRequired(), middleware.AdminRequired())
+		func(op huma.Operation) []gin.HandlerFunc {
+			p := op.Path
+			switch {
+			// 公开接口：无需鉴权
+			case p == "/auth/login", p == "/auth/login/otp", p == "/auth/logout",
+				p == "/settings/public", p == "/interconnect/report":
+				return nil
+
+			// 普通用户：仅 AuthRequired
+			case p == "/auth/me", strings.HasPrefix(p, "/auth/otp/"):
+				return []gin.HandlerFunc{middleware.AuthRequired()}
+
+			// NotifyTokenAuth 独立鉴权
+			case p == "/notify/send":
+				return []gin.HandlerFunc{middleware.NotifyTokenAuth()}
+
+			// 内部接口：仅本地回环 + 内部凭证
+			case strings.HasPrefix(p, "/internal/"):
+				return []gin.HandlerFunc{middleware.LocalhostOnly()}
+
+			// 其余：AuthRequired + AdminRequired（含已迁移业务接口、SSE、文件流、代理）
+			default:
+				return []gin.HandlerFunc{middleware.AuthRequired(), middleware.AdminRequired()}
+			}
+		})
+
+	// Agent 外部接口实例：挂载于 /api/agent 前缀（供远程 Agent 调用）。
+	// 鉴权由各 handler 内部通过 `Authorization: Bearer <token>` 完成，此处不套用任何业务中间件。
+	c.AgentHuma = newHuma(router, "/api", "Baihu Panel Agent API", constant.Version,
+		"供远程 Agent 调用的外部接口。通过 `Authorization: Bearer <token>` 进行鉴权。", nil)
 
 	// 4.1 Huma 实例（双文档方案）：挂载于 /open2api/v1，注册的 Huma 路由统一走 OpenapiRequired 鉴权
 	// 注意：必须在 initOpenAPIV1Routes 之前创建，否则注册时实例仍为 nil
 	c.Open2APIV1Huma = newHuma(router, "/open2api/v1", "Baihu Panel OpenAPI", constant.Version,
-		"对外开放 API。需通过 Bearer Token 进行鉴权。", middleware.OpenapiRequired())
+		"对外开放 API。需通过 Bearer Token 进行鉴权。",
+		func(op huma.Operation) []gin.HandlerFunc {
+			return []gin.HandlerFunc{middleware.OpenapiRequired()}
+		})
 
 	// 4. [ location /api/agent ] Agent 相关 API 路由组
 	initAgentAPIRoutes(root, c)

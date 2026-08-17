@@ -10,6 +10,11 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// mwSelector 根据 Operation 决定套用哪些 gin 中间件。
+// /api/v1 实例内存在多种鉴权级别（普通用户 / 管理员 / NotifyToken），
+// 通过该函数按 op.Path 返回对应的 gin handler 链。
+type mwSelector func(op huma.Operation) []gin.HandlerFunc
+
 // newHuma 创建挂载到指定路径前缀的 Huma 实例。
 //
 // 说明：humagin.New 仅接受 *gin.Engine 作为挂载目标（路由注册在引擎根路径），
@@ -17,9 +22,9 @@ import (
 // 一个独立的 Huma 实例（双文档方案），这里通过自定义 adapter 在注册 Operation
 // 时统一为路径追加前缀，从而实现按前缀隔离。
 //
-// middleware 中传入的 gin.HandlerFunc 会应用到该前缀下注册的所有 Huma 路由
-// （例如 OpenapiRequired 鉴权中间件）。
-func newHuma(engine *gin.Engine, prefix, title, version, desc string, middleware ...gin.HandlerFunc) huma.API {
+// selector 根据每个 Operation 决定该路由套用哪些 gin 中间件（如 OpenapiRequired、
+// AuthRequired + AdminRequired 等鉴权链）。为 nil 时不套用任何业务中间件。
+func newHuma(engine *gin.Engine, prefix, title, version, desc string, selector mwSelector) huma.API {
 	config := huma.DefaultConfig(title, version)
 	config.Info.Description = desc
 	// 安全方案
@@ -36,6 +41,12 @@ func newHuma(engine *gin.Engine, prefix, title, version, desc string, middleware
 			Name:        "bh_token",
 			Description: "Session cookie set after login.",
 		},
+		"NotifyTokenAuth": {
+			Type:        "apiKey",
+			In:          "header",
+			Name:        "notify-token",
+			Description: "通知 Token，通过 `notify-token` 请求头传递（供脚本调用发送通知）。",
+		},
 	}
 
 	// servers 配置：默认使用相对路径，使 OpenAPI 文档可跟随部署域名自动适配
@@ -50,18 +61,18 @@ func newHuma(engine *gin.Engine, prefix, title, version, desc string, middleware
 	config.Transformers = append(config.Transformers, utils.HumaTransformer)
 
 	return huma.NewAPI(config, &prefixAdapter{
-		engine:     engine,
-		prefix:     strings.TrimSuffix(prefix, "/"),
-		middleware: middleware,
+		engine:   engine,
+		prefix:   strings.TrimSuffix(prefix, "/"),
+		selector: selector,
 	})
 }
 
 // prefixAdapter 实现 huma.Adapter，在注册路由时自动为路径追加前缀，
 // 使同一个 gin.Engine 下可以挂载多个独立的 Huma 实例。
 type prefixAdapter struct {
-	engine     *gin.Engine
-	prefix     string
-	middleware []gin.HandlerFunc
+	engine   *gin.Engine
+	prefix   string
+	selector mwSelector
 }
 
 func (a *prefixAdapter) Handle(op *huma.Operation, handler func(huma.Context)) {
@@ -72,9 +83,9 @@ func (a *prefixAdapter) Handle(op *huma.Operation, handler func(huma.Context)) {
 
 	// Huma 自动注册的 OpenAPI 规范 / 文档 / schema 路由不应套用业务鉴权中间件，
 	// 否则文档无法被公开访问。通过路径特征识别并跳过中间件。
-	handlers := a.middleware
-	if isHumaMetaPath(op.Path) {
-		handlers = nil
+	var handlers []gin.HandlerFunc
+	if !isHumaMetaPath(op.Path) && a.selector != nil {
+		handlers = a.selector(*op)
 	}
 
 	a.engine.Handle(op.Method, path, append(handlers, func(c *gin.Context) {
